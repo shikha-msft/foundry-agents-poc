@@ -1,6 +1,12 @@
 trigger: none
 pr: none
 
+parameters:
+  - name: provisionAgent365
+    displayName: Register the MAF orchestrator with Agent 365
+    type: boolean
+    default: false
+
 variables:
   - group: foundry-agents-poc-environment
   - name: pythonVersion
@@ -61,3 +67,44 @@ stages:
                         -RagAgentName "$(RAG_AGENT_NAME)" `
                         -ApplicationInsightsName "$(GOVERNED_APPLICATION_INSIGHTS_NAME)" `
                         -EntraClientId "$(ENTRA_CLIENT_ID)"
+
+  - stage: Agent365
+    displayName: Register MAF with Agent 365
+    dependsOn: Deploy
+    condition: and(succeeded(), ${{ eq(parameters.provisionAgent365, true) }})
+    jobs:
+      - deployment: RegisterMafAgent365
+        pool:
+          vmImage: windows-latest
+        environment: $(ADO_AGENT365_ENVIRONMENT_NAME)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: UseDotNet@2
+                  displayName: Use .NET 8 for Agent 365 CLI
+                  inputs:
+                    packageType: sdk
+                    version: 8.x
+                - powershell: |
+                    dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli
+                    a365 --help
+                  displayName: Install Agent 365 CLI
+                - task: AzureCLI@2
+                  displayName: Register and configure MAF Agent 365 identity
+                  inputs:
+                    azureSubscription: $(ADO_AGENT365_SERVICE_CONNECTION)
+                    scriptType: pscore
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc
+                    inlineScript: |
+                      .\provision-agent365.ps1 `
+                        -Scope Maf `
+                        -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
+                        -TenantId "$(AZURE_TENANT_ID)" `
+                        -ResourceGroupName "$(AZURE_RESOURCE_GROUP)" `
+                        -FoundryAccountName "$(FOUNDRY_ACCOUNT_NAME)" `
+                        -WebAppName "$(WEB_APP_NAME)" `
+                        -MafAgentName "$(AGENT365_MAF_AGENT_NAME)" `
+                        -AuthMode "$(AGENT365_AUTH_MODE)"

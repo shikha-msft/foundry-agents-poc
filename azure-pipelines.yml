@@ -14,6 +14,10 @@ parameters:
     displayName: Create a new RAG Agent version
     type: boolean
     default: false
+  - name: enableAgent365Foundry
+    displayName: Enable Agent 365 data collection on the Foundry resource
+    type: boolean
+    default: false
 variables:
   - group: foundry-agents-poc-environment
   - name: pythonVersion
@@ -198,3 +202,41 @@ stages:
                     targetPath: $(Build.ArtifactStagingDirectory)
                     artifact: foundry-agent-responses
                     publishLocation: pipeline
+
+  - stage: Agent365
+    displayName: Enable Foundry Agent 365 integration
+    dependsOn:
+      - Provision
+      - DeployAgents
+    condition: |
+      and(
+        not(canceled()),
+        in(dependencies.Provision.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
+        in(dependencies.DeployAgents.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
+        ${{ eq(parameters.enableAgent365Foundry, true) }}
+      )
+    jobs:
+      - deployment: EnableFoundryAgent365
+        displayName: Enable Foundry Agent 365 data collection
+        pool:
+          vmImage: windows-latest
+        environment: $(ADO_AGENT365_ENVIRONMENT_NAME)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureCLI@2
+                  displayName: Enable and validate Agent 365
+                  inputs:
+                    azureSubscription: $(ADO_AGENT365_SERVICE_CONNECTION)
+                    scriptType: pscore
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc
+                    inlineScript: |
+                      .\provision-agent365.ps1 `
+                        -Scope Foundry `
+                        -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
+                        -TenantId "$(AZURE_TENANT_ID)" `
+                        -ResourceGroupName "$(AZURE_RESOURCE_GROUP)" `
+                        -FoundryAccountName "$(FOUNDRY_ACCOUNT_NAME)"

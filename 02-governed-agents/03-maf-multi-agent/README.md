@@ -57,6 +57,7 @@ Autonomy is bounded by:
 | `app/orchestration.py` | MAF Prompt, RAG, and autonomous Magentic workflow |
 | `app/foundry_gateway.py` | Invokes existing Foundry agents with `agent_reference` |
 | `app/authentication.py` | Workload identity, managed identity, and Azure CLI authentication |
+| `app/agent365.py` | Secretless Agent 365 token exchange and Microsoft OpenTelemetry invocation scopes |
 | `app/configuration.py` | Validated environment configuration and autonomy limits |
 | `deploy.ps1` | Idempotent App Service provisioning and ZIP deployment |
 | `azure-pipelines.yml` | Workload-federated Azure DevOps validation and deployment |
@@ -75,6 +76,10 @@ Autonomy is bounded by:
 5. `GOVERNED_APPLICATION_INSIGHTS_NAME` exists.
 6. For authenticated production access, an Entra application registration is
    approved for App Service Easy Auth.
+7. For Agent 365, the tenant has an active license and completed consent, and
+   the provisioning administrator has the required Agent ID roles plus
+   `AgentIdentityBlueprint.AddRemoveCreds.All` to federate the App Service
+   managed identity with the MAF Agent Identity blueprint.
 
 ## Run locally
 
@@ -135,6 +140,35 @@ Do not deploy production without `EntraClientId`. When it is omitted,
 `REQUIRE_APP_SERVICE_AUTH` is set to `false` to support local/controlled POC
 testing and the endpoint is not suitable for public production use.
 
+## Register with Microsoft Agent 365
+
+The MAF application is registered once as an S2S orchestrator. The Prompt and
+Retrieval specialists are not separate Agent 365 registrations because they
+delegate to the existing remote Foundry agents.
+
+After deploying App Service:
+
+```powershell
+cd ..\..\..
+dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli
+.\provision-agent365.ps1 -Scope Maf -WhatIf
+.\provision-agent365.ps1 -Scope Maf
+```
+
+The provisioning script:
+
+1. Verifies the App Service system-assigned managed identity.
+2. Runs Agent 365 prerequisite validation.
+3. Creates the MAF blueprint, Agent Identity, S2S grants, and registration.
+4. Preserves the App Service managed identity as the secretless bootstrap
+   identity for federated token exchange.
+5. Configures `A365_BLUEPRINT_CLIENT_ID`, `A365_AGENT_CLIENT_ID`, and the
+   Agent 365 exporter settings on App Service.
+
+Do not copy the generated blueprint secret into source control or App Service
+settings. Runtime export uses the App Service managed identity, the blueprint
+federated trust, and the Agent Identity `fmi_path` exchange.
+
 ## Deploy through Azure DevOps
 
 Create a pipeline from `03-maf-multi-agent/azure-pipelines.yml`.
@@ -147,6 +181,8 @@ Pipeline configuration is read from the
 | `ADO_APP_SERVICE_CONNECTION` | Workload-federated ARM service connection |
 | `WEB_APP_NAME` | Globally unique App Service name |
 | `ENTRA_CLIENT_ID` | Approved Easy Auth application ID |
+| `ADO_AGENT365_SERVICE_CONNECTION` | Connection used only by the approved Agent 365 stage |
+| `ADO_AGENT365_ENVIRONMENT_NAME` | Approval-protected Agent 365 environment |
 
 The service connection identity requires:
 
@@ -157,10 +193,15 @@ The service connection identity requires:
 Configure an approval on the Azure DevOps environment selected by the pipeline
 parameter. The pipeline has no automatic trigger.
 
+Set `provisionAgent365: true` only for an approved run. The normal deployment
+path leaves Agent 365 unchanged.
+
 ## Observability
 
-When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present,
-`azure-monitor-opentelemetry` configures Azure Monitor tracing. Capture:
+Microsoft OpenTelemetry configures Azure Monitor when
+`APPLICATIONINSIGHTS_CONNECTION_STRING` is present. When Agent 365 is enabled,
+the same distro adds an Agent 365 `invoke_agent` scope and exports through the
+S2S endpoint. Capture:
 
 - Request and dependency duration.
 - MAF workflow failures and timeouts.
@@ -170,3 +211,7 @@ When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present,
 
 Do not log prompt bodies, retrieved documents, credentials, access tokens, or
 Easy Auth principal payloads.
+
+`A365_SUPPRESS_INVOKE_AGENT_INPUT=true` is mandatory in this starter kit.
+Agent 365 token acquisition fails closed when the requested tenant or Agent
+Identity does not match the approved configuration.

@@ -1,4 +1,7 @@
 deployment-output.json
+agent365-provisioning-output.json
+a365.generated.config.json
+**/a365.generated.config.json
 .env
 **/.env
 **/__pycache__/

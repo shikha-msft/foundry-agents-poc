@@ -376,6 +376,11 @@ The project is already connected to:
 Developers must not create a separate monitoring resource for each agent or
 disable project tracing.
 
+When the platform owner enables Agent 365 on the parent Foundry resource,
+every experimentation agent inherits Agent 365 inventory and activity-data
+collection. Foundry exposes this as a resource-level setting; developers
+cannot independently enable or disable it for one project or one agent.
+
 ### Validate tracing before agent testing
 
 1. Open the project in Microsoft Foundry.

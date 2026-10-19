@@ -333,6 +333,19 @@ Foundry server-side tracing captures the agent, model, and supported tool
 operations. Custom MCP/OpenAPI services must propagate W3C trace context and
 emit their own dependency telemetry.
 
+### Agent 365
+
+The parent Foundry resource provides built-in Agent 365 integration for the
+Prompt and RAG agents. Run `..\provision-agent365.ps1 -Scope Foundry` after
+tenant licensing and consent are complete. The setting applies to every
+project and Prompt Agent under that Foundry resource.
+
+The MAF application follows a separate SDK path because it is hosted in App
+Service. It receives one S2S Agent 365 registration for the orchestrator and
+uses Microsoft OpenTelemetry for Agent 365 and Azure Monitor export. The
+in-process specialists are not duplicate registrations of the remote Prompt
+and RAG agents.
+
 ### Required trace dimensions
 
 Capture or correlate:

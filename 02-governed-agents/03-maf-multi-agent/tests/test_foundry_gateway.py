@@ -39,6 +39,15 @@ def _settings() -> Settings:
         max_stall_count=2,
         workflow_timeout_seconds=120,
         require_app_service_auth=True,
+        agent365_enabled=False,
+        agent365_agent_name=None,
+        agent365_auth_mode="s2s",
+        agent365_blueprint_client_id=None,
+        agent365_agent_client_id=None,
+        agent365_bootstrap_client_id=None,
+        agent365_exporter_enabled=True,
+        agent365_use_s2s_endpoint=True,
+        agent365_suppress_invoke_agent_input=True,
     )
 
 

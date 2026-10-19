@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -23,10 +26,32 @@ class FakeRuntime:
         self.closed = True
 
 
+class FakeObservability:
+    @contextmanager
+    def invocation(
+        self,
+        *,
+        request_id: str,
+        caller_id: str | None,
+    ) -> Iterator[None]:
+        assert request_id
+        yield None
+
+    def close(self) -> None:
+        return None
+
+
+def _create_test_app(runtime: FakeRuntime):
+    return create_app(
+        lambda _: runtime,
+        lambda _: FakeObservability(),
+    )
+
+
 def test_chat_requires_easy_auth_header(monkeypatch) -> None:
     monkeypatch.setenv("REQUIRE_APP_SERVICE_AUTH", "true")
     runtime = FakeRuntime()
-    app = create_app(lambda _: runtime)
+    app = _create_test_app(runtime)
 
     with TestClient(app) as client:
         response = client.post("/api/chat", json={"message": "hello"})
@@ -38,7 +63,7 @@ def test_chat_requires_easy_auth_header(monkeypatch) -> None:
 def test_chat_returns_multi_agent_response(monkeypatch) -> None:
     monkeypatch.setenv("REQUIRE_APP_SERVICE_AUTH", "true")
     runtime = FakeRuntime()
-    app = create_app(lambda _: runtime)
+    app = _create_test_app(runtime)
 
     with TestClient(app) as client:
         response = client.post(
@@ -61,7 +86,7 @@ def test_chat_returns_multi_agent_response(monkeypatch) -> None:
 
 def test_chat_maps_workflow_timeout(monkeypatch) -> None:
     monkeypatch.setenv("REQUIRE_APP_SERVICE_AUTH", "false")
-    app = create_app(lambda _: FakeRuntime(timeout=True))
+    app = _create_test_app(FakeRuntime(timeout=True))
 
     with TestClient(app) as client:
         response = client.post("/api/chat", json={"message": "hello"})

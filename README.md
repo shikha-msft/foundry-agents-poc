@@ -85,6 +85,66 @@ The script is idempotent: it uses PUT operations for resources and skips role
 assignments that already exist. It writes non-secret resource identifiers to
 `deployment-output.json`.
 
+## Microsoft Agent 365 provisioning
+
+Agent 365 is opt-in because it requires tenant licensing, tenant consent, and
+privileged Entra permissions that are not granted to normal agent developers.
+
+The integration follows the supported hosting model:
+
+- The Foundry resource uses built-in Agent 365 integration. Setting
+  `a365LoggingEnabled=true` applies to every project and Prompt Agent in the
+  resource, including experimentation, Prompt, and RAG agents. Foundry does
+  not provide a per-project or per-agent override.
+- The App Service-hosted MAF application is registered once as a standard S2S
+  Agent 365 orchestrator. Its in-process Prompt and Retrieval specialists are
+  not registered again because they delegate to the separately inventoried
+  remote Prompt and RAG agents.
+- Microsoft OpenTelemetry exports MAF invocation telemetry without recording
+  prompt or response bodies.
+
+Prerequisites:
+
+1. Agent 365 is licensed and enabled in the Entra tenant.
+2. Tenant-level Agent 365 consent is complete.
+3. The administrator running setup has Azure **Contributor**, **Agent ID
+   Developer**, and, for S2S grants, **Agent ID Administrator** or the
+   documented higher role. The identity must also be allowed to add federated
+   credentials to Agent Identity blueprints
+   (`AgentIdentityBlueprint.AddRemoveCreds.All`).
+4. The Agent 365 CLI is installed:
+
+   ```powershell
+   dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli
+   ```
+
+5. The MAF App Service is deployed with its system-assigned managed identity
+   before MAF registration.
+
+Preview both provisioning paths:
+
+```powershell
+.\provision-agent365.ps1 -Scope All -WhatIf
+```
+
+Enable and validate Foundry integration:
+
+```powershell
+.\provision-agent365.ps1 -Scope Foundry
+```
+
+Register the MAF orchestrator, establish its S2S identity configuration, and
+configure the App Service:
+
+```powershell
+.\provision-agent365.ps1 -Scope Maf
+```
+
+The script fails if Foundry reports `Disabled` or `NotLicensed`. Generated
+Agent 365 configuration can contain credentials, so
+`a365.generated.config.json` and `agent365-provisioning-output.json` are
+excluded from Git.
+
 ## Azure DevOps pipeline
 
 [`azure-pipelines.yml`](./azure-pipelines.yml) can run the complete workflow
@@ -103,6 +163,7 @@ produces a new immutable version. Run it manually and select:
 | `provisionInfrastructure` | `false` | Run `deploy.ps1` before creating agents |
 | `createPromptAgent` | `true` | Create a new `PROMPT_AGENT_NAME` version |
 | `createRagAgent` | `false` | Create a new `RAG_AGENT_NAME` version |
+| `enableAgent365Foundry` | `false` | Enable and validate built-in Agent 365 integration on the Foundry resource |
 
 ### Pipeline setup
 
@@ -124,7 +185,10 @@ produces a new immutable version. Run it manually and select:
 5. Set `ADO_INFRASTRUCTURE_ENVIRONMENT_NAME` and
    `ADO_AGENT_ENVIRONMENT_NAME` to the approved Azure DevOps environment
    names, then configure their approvals and checks.
-6. Create a pipeline from `foundry-agents-poc/azure-pipelines.yml`.
+6. For Agent 365, configure `ADO_AGENT365_SERVICE_CONNECTION` and
+   `ADO_AGENT365_ENVIRONMENT_NAME`. Protect the environment with an Agent 365
+   administrator approval.
+7. Create a pipeline from `foundry-agents-poc/azure-pipelines.yml`.
 
 The pipeline authenticates with `AzureCLI@2`; the Python SDK then uses that
 federated Azure CLI session. It does not upload either local `.env` file and

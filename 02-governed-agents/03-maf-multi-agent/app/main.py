@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from azure.monitor.opentelemetry import configure_azure_monitor
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from .agent365 import Agent365Observability
 from .authentication import build_credential
 from .configuration import Settings
 from .orchestration import MultiAgentRuntime
@@ -28,24 +27,28 @@ class ChatResponse(BaseModel):
 
 
 RuntimeFactory = Callable[[Settings], MultiAgentRuntime]
+ObservabilityFactory = Callable[[Settings], Agent365Observability]
 
 
 def _default_runtime_factory(settings: Settings) -> MultiAgentRuntime:
     return MultiAgentRuntime(settings, build_credential(settings))
 
 
-def create_app(runtime_factory: RuntimeFactory = _default_runtime_factory) -> FastAPI:
+def create_app(
+    runtime_factory: RuntimeFactory = _default_runtime_factory,
+    observability_factory: ObservabilityFactory = Agent365Observability,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = Settings.from_environment()
-        if os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"):
-            configure_azure_monitor()
         app.state.settings = settings
+        app.state.observability = observability_factory(settings)
         app.state.runtime = runtime_factory(settings)
         try:
             yield
         finally:
             app.state.runtime.close()
+            app.state.observability.close()
 
     application = FastAPI(
         title="Governed MAF Multi-Agent",
@@ -82,17 +85,21 @@ def create_app(runtime_factory: RuntimeFactory = _default_runtime_factory) -> Fa
 
         request_id = x_request_id or str(uuid4())
         logger.info("Starting governed MAF workflow", extra={"request_id": request_id})
-        try:
-            result = await request.app.state.runtime.run(payload.message)
-        except TimeoutError as error:
-            logger.warning(
-                "Governed MAF workflow timed out",
-                extra={"request_id": request_id},
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="The multi-agent workflow exceeded its execution time limit.",
-            ) from error
+        with request.app.state.observability.invocation(
+            request_id=request_id,
+            caller_id=x_ms_client_principal_id,
+        ):
+            try:
+                result = await request.app.state.runtime.run(payload.message)
+            except TimeoutError as error:
+                logger.warning(
+                    "Governed MAF workflow timed out",
+                    extra={"request_id": request_id},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="The multi-agent workflow exceeded its execution time limit.",
+                ) from error
 
         logger.info("Completed governed MAF workflow", extra={"request_id": request_id})
         return ChatResponse(
