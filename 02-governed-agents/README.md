@@ -1,6 +1,7 @@
 # 02 - Governed POC Agents
 
-This folder defines the governed-agent pattern for the `POC Project`.
+This folder defines the governed-agent pattern for the project configured by
+`GOVERNED_PROJECT_DISPLAY_NAME`.
 
 The governed implementation categories are:
 
@@ -15,15 +16,15 @@ the project's mandatory Application Insights observability baseline.
 
 | Setting | Value |
 |---|---|
-| Foundry account | `ss-aueast-foundry` |
-| Foundry project resource name | `poc-project` |
-| Foundry project display name | `POC Project` |
+| Foundry account | `FOUNDRY_ACCOUNT_NAME` |
+| Foundry project resource name | `GOVERNED_PROJECT_NAME` |
+| Foundry project display name | `GOVERNED_PROJECT_DISPLAY_NAME` |
 | Purpose | Governed POC Agents development |
-| Region | Australia East |
-| Project managed identity | `0fdb2014-faef-4c38-a7de-55293ee252d8` |
-| Application Insights | `appi-agents-poc-aue-poc-project` |
-| Log Analytics workspace | `log-agents-poc-aue-poc-project` |
-| Default chat model for the POC | `gpt-5.4-mini` |
+| Region | `AZURE_LOCATION` |
+| Project managed identity | Record after provisioning |
+| Application Insights | `GOVERNED_APPLICATION_INSIGHTS_NAME` |
+| Log Analytics workspace | `GOVERNED_LOG_ANALYTICS_NAME` |
+| Default chat model for the POC | `MODEL_DEPLOYMENT_NAME` |
 | Available alternative chat model | `gpt-5-mini` |
 | Embedding model for RAG ingestion | `text-embedding-3-small` |
 
@@ -70,8 +71,8 @@ definitions. The Python scripts remain the definition source of truth.
 Authenticate with Azure CLI and create a version through the Foundry REST API:
 
 ```powershell
-az login --tenant 16b3c013-d300-468d-ac64-7eda0820b6d3
-az account set --subscription c6a4ffe5-6f74-4846-b4e1-57386c4b7935
+az login
+az account set --subscription "<AZURE_SUBSCRIPTION_ID from .env>"
 
 .\create-agent-version.ps1 -Agent prompt -Method AzCli
 .\create-agent-version.ps1 -Agent rag -Method AzCli
@@ -94,7 +95,7 @@ Authenticate with `azd`, then create a version using its short-lived Foundry
 token:
 
 ```powershell
-azd auth login --tenant-id 16b3c013-d300-468d-ac64-7eda0820b6d3
+azd auth login --tenant-id "<AZURE_TENANT_ID from .env>"
 
 .\create-agent-version.ps1 -Agent prompt -Method Azd
 .\create-agent-version.ps1 -Agent rag -Method Azd
@@ -114,8 +115,7 @@ pipeline validates the definitions, creates selected versions, and publishes
 the Foundry responses as an artifact.
 
 Before creating the RAG Agent through any option, populate
-`AZURE_AI_SEARCH_INDEX_NAME` in its `.env` or provide `searchIndexName` when
-queueing the pipeline.
+`AZURE_AI_SEARCH_INDEX_NAME` in its `.env` or the Azure DevOps variable group.
 
 ## 1. Important Foundry identity behavior
 
@@ -126,14 +126,10 @@ This implementation uses the newer Foundry agent object model exposed by
 `azure-ai-projects` 2.6. Foundry creates the managed blueprint and Agent
 Identity as part of `client.agents.create_version(...)`.
 
-The live creation of `gov-prompt-agent-poc:1` returned:
-
-- Blueprint type: `ManagedAgentIdentityBlueprint`
-- Blueprint ID: `gov-prompt-agent-poc-0ce58`
-- Blueprint principal object ID: `451adebd-1047-41b7-afee-c3d0053fea21`
-- Blueprint client/application ID: `9fbc8b46-b649-4ab0-b9b8-3e1f4b8b1613`
-- Agent Identity object/client ID: `4dd6217d-6b2d-4317-860e-8a779c092efd`
-- Agent GUID: `0ce58ee8-a57d-41c7-bb87-73d41efee393`
+Each successful creation returns a blueprint type, blueprint ID, blueprint
+principal, blueprint client/application ID, Agent Identity, and agent GUID.
+Record those values in the approved governance register rather than in the
+shareable repository.
 
 The older Agent Application publishing model used a shared development
 identity and created a distinct identity when publishing. Do not apply that
@@ -142,7 +138,7 @@ returned by the created agent version, and verify the identifiers again when a
 new version or endpoint is promoted.
 
 ```text
-POC Project managed identity
+Governed project managed identity
         |
         | Foundry-managed federated trust
         v
@@ -208,7 +204,7 @@ directory scope that Agent ID APIs reject.
 
 | Principal | Role | Scope | Purpose |
 |---|---|---|---|
-| Agent developer group | **Foundry User** | `poc-project` | Create, configure, and test agents |
+| Agent developer group | **Foundry User** | `GOVERNED_PROJECT_NAME` | Create, configure, and test agents |
 | Agent developer group | **Reader** | Parent Foundry account | Portal navigation |
 | Publisher/team lead | **Foundry Project Manager** | Foundry account/project as required | Promote or publish an approved agent endpoint |
 | Project managed identity | **Foundry User** | Parent Foundry account | Use project models and capabilities |
@@ -250,7 +246,7 @@ registration.
 
 The managed blueprint is attached to the agent response rather than the
 project ARM response. Query the agent through the Foundry data plane instead
-of looking only at the `poc-project` ARM resource.
+of looking only at the ARM resource identified by `GOVERNED_PROJECT_NAME`.
 
 ## 4. Create the two agent categories
 
@@ -330,10 +326,8 @@ identity's permissions separate from the Agent Identity.
 
 Both agent categories use the existing project monitoring baseline:
 
-- Application Insights:
-  `appi-agents-poc-aue-poc-project`
-- Log Analytics:
-  `log-agents-poc-aue-poc-project`
+- Application Insights: `GOVERNED_APPLICATION_INSIGHTS_NAME`
+- Log Analytics: `GOVERNED_LOG_ANALYTICS_NAME`
 
 Foundry server-side tracing captures the agent, model, and supported tool
 operations. Custom MCP/OpenAPI services must propagate W3C trace context and
@@ -383,18 +377,18 @@ Complete this table as each agent is created:
 
 | Field | Prompt Agent | RAG Agent |
 |---|---|---|
-| Foundry agent name | `gov-prompt-agent-poc` | `gov-rag-agent-poc` |
-| Agent version | `1` | Pending Search index |
-| Agent GUID | `0ce58ee8-a57d-41c7-bb87-73d41efee393` | Pending |
-| Blueprint type | `ManagedAgentIdentityBlueprint` | Pending |
-| Blueprint ID | `gov-prompt-agent-poc-0ce58` | Pending |
-| Blueprint principal object ID | `451adebd-1047-41b7-afee-c3d0053fea21` | Pending |
-| Blueprint client/application ID | `9fbc8b46-b649-4ab0-b9b8-3e1f4b8b1613` | Pending |
-| Agent Identity object ID | `4dd6217d-6b2d-4317-860e-8a779c092efd` | Pending |
+| Foundry agent name | `PROMPT_AGENT_NAME` | `RAG_AGENT_NAME` |
+| Agent version | Record after creation | Record after creation |
+| Agent GUID | Record after creation | Record after creation |
+| Blueprint type | Record after creation | Record after creation |
+| Blueprint ID | Record after creation | Record after creation |
+| Blueprint principal object ID | Record after creation | Record after creation |
+| Blueprint client/application ID | Record after creation | Record after creation |
+| Agent Identity object ID | Record after creation | Record after creation |
 | Owner | To be assigned | To be assigned |
 | Sponsor | To be assigned | To be assigned |
 | Downstream roles | None by default | Search reader by default |
-| Application Insights | `appi-agents-poc-aue-poc-project` | `appi-agents-poc-aue-poc-project` |
+| Application Insights | `GOVERNED_APPLICATION_INSIGHTS_NAME` | `GOVERNED_APPLICATION_INSIGHTS_NAME` |
 | Review/expiry date | To be assigned | To be assigned |
 
 ## 9. Acceptance criteria

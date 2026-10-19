@@ -1,19 +1,18 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string] $SubscriptionId = "c6a4ffe5-6f74-4846-b4e1-57386c4b7935",
-    [string] $TenantId = "16b3c013-d300-468d-ac64-7eda0820b6d3",
-    [string] $ResourceGroupName = "rg-foundry-demo",
-    [string] $Location = "australiaeast",
-    [string] $AppServicePlanName = "asp-maf-agents-poc-aue",
-    [Parameter(Mandatory)]
+    [string] $SubscriptionId,
+    [string] $TenantId,
+    [string] $ResourceGroupName,
+    [string] $Location,
+    [string] $AppServicePlanName,
     [string] $WebAppName,
-    [string] $Sku = "B1",
-    [string] $FoundryAccountName = "ss-aueast-foundry",
-    [string] $ProjectEndpoint = "https://ss-aueast-foundry.services.ai.azure.com/api/projects/poc-project",
-    [string] $ModelDeploymentName = "gpt-5.4-mini",
-    [string] $PromptAgentName = "gov-prompt-agent-poc",
-    [string] $RagAgentName = "gov-rag-agent-poc",
-    [string] $ApplicationInsightsName = "appi-agents-poc-aue-poc-project",
+    [string] $Sku,
+    [string] $FoundryAccountName,
+    [string] $ProjectEndpoint,
+    [string] $ModelDeploymentName,
+    [string] $PromptAgentName,
+    [string] $RagAgentName,
+    [string] $ApplicationInsightsName,
     [string] $EntraClientId,
     [switch] $SkipPackageDeploy,
     [switch] $SkipRoleAssignment
@@ -21,6 +20,74 @@ param(
 
 $ErrorActionPreference = "Stop"
 $foundryUserRoleId = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+
+function Import-DotEnv {
+    param([Parameter(Mandatory)][string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return
+    }
+
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $parts = $trimmed.Split("=", 2)
+        if ($parts.Count -ne 2) {
+            throw "Invalid .env entry in ${Path}: $line"
+        }
+
+        $name = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if (
+            $value.Length -ge 2 -and
+            (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+             ($value.StartsWith("'") -and $value.EndsWith("'")))
+        ) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+}
+
+function Resolve-Setting {
+    param(
+        [string] $ParameterValue,
+        [Parameter(Mandatory)][string] $EnvironmentName,
+        [switch] $AllowEmpty
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ParameterValue)) {
+        return $ParameterValue
+    }
+
+    $value = [Environment]::GetEnvironmentVariable($EnvironmentName)
+    if (-not $AllowEmpty -and [string]::IsNullOrWhiteSpace($value)) {
+        throw "Set $EnvironmentName in .env or pass the corresponding command-line parameter."
+    }
+    return $value
+}
+
+Import-DotEnv -Path (Join-Path $PSScriptRoot "..\..\.env")
+Import-DotEnv -Path (Join-Path $PSScriptRoot ".env")
+
+$SubscriptionId = Resolve-Setting $SubscriptionId "AZURE_SUBSCRIPTION_ID"
+$TenantId = Resolve-Setting $TenantId "AZURE_TENANT_ID"
+$ResourceGroupName = Resolve-Setting $ResourceGroupName "AZURE_RESOURCE_GROUP"
+$Location = Resolve-Setting $Location "AZURE_LOCATION"
+$AppServicePlanName = Resolve-Setting $AppServicePlanName "APP_SERVICE_PLAN_NAME"
+$WebAppName = Resolve-Setting $WebAppName "WEB_APP_NAME"
+$Sku = Resolve-Setting $Sku "APP_SERVICE_SKU"
+$FoundryAccountName = Resolve-Setting $FoundryAccountName "FOUNDRY_ACCOUNT_NAME"
+$ProjectEndpoint = Resolve-Setting $ProjectEndpoint "PROJECT_ENDPOINT"
+$ModelDeploymentName = Resolve-Setting $ModelDeploymentName "MODEL_DEPLOYMENT_NAME"
+$PromptAgentName = Resolve-Setting $PromptAgentName "PROMPT_AGENT_NAME"
+$RagAgentName = Resolve-Setting $RagAgentName "RAG_AGENT_NAME"
+$ApplicationInsightsName = Resolve-Setting $ApplicationInsightsName "GOVERNED_APPLICATION_INSIGHTS_NAME"
+$EntraClientId = Resolve-Setting $EntraClientId "ENTRA_CLIENT_ID" -AllowEmpty
 
 function Invoke-AzCli {
     param([Parameter(Mandatory)][string[]] $Arguments)

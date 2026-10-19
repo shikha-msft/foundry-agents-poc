@@ -2,14 +2,6 @@ trigger: none
 pr: none
 
 parameters:
-  - name: agentServiceConnection
-    displayName: Agent deployment workload identity service connection
-    type: string
-    default: foundry-poc-agent-wif
-  - name: infrastructureServiceConnection
-    displayName: Infrastructure workload identity service connection
-    type: string
-    default: foundry-poc-infra-wif
   - name: provisionInfrastructure
     displayName: Create or update Foundry projects and monitoring
     type: boolean
@@ -22,26 +14,10 @@ parameters:
     displayName: Create a new RAG Agent version
     type: boolean
     default: false
-  - name: searchIndexName
-    displayName: Azure AI Search index name (required for RAG)
-    type: string
-    default: ""
-
 variables:
-  pythonVersion: "3.12"
-  subscriptionId: c6a4ffe5-6f74-4846-b4e1-57386c4b7935
-  tenantId: 16b3c013-d300-468d-ac64-7eda0820b6d3
-  resourceGroupName: rg-foundry-demo
-  foundryAccountName: ss-aueast-foundry
-  location: australiaeast
-  projectEndpoint: https://ss-aueast-foundry.services.ai.azure.com/api/projects/poc-project
-  modelDeploymentName: gpt-5.4-mini
-  applicationInsightsResourceName: appi-agents-poc-aue-poc-project
-  promptAgentName: gov-prompt-agent-poc
-  ragAgentName: gov-rag-agent-poc
-  searchConnectionId: /subscriptions/c6a4ffe5-6f74-4846-b4e1-57386c4b7935/resourceGroups/rg-foundry-demo/providers/Microsoft.CognitiveServices/accounts/ss-aueast-foundry/projects/poc-project/connections/ss-aueast-foundry-aisearch
-  searchQueryType: vector_semantic_hybrid
-  searchTopK: "5"
+  - group: foundry-agents-poc-environment
+  - name: pythonVersion
+    value: "3.12"
 
 stages:
   - stage: Validate
@@ -84,15 +60,15 @@ stages:
             workingDirectory: foundry-agents-poc/02-governed-agents/02-rag-agent
             displayName: Validate RAG definition
             env:
-              PROJECT_ENDPOINT: $(projectEndpoint)
-              AZURE_TENANT_ID: $(tenantId)
-              MODEL_DEPLOYMENT_NAME: $(modelDeploymentName)
-              AGENT_NAME: $(ragAgentName)
-              APPLICATION_INSIGHTS_RESOURCE_NAME: $(applicationInsightsResourceName)
-              AZURE_AI_SEARCH_CONNECTION_ID: $(searchConnectionId)
+              PROJECT_ENDPOINT: $(PROJECT_ENDPOINT)
+              AZURE_TENANT_ID: $(AZURE_TENANT_ID)
+              MODEL_DEPLOYMENT_NAME: $(MODEL_DEPLOYMENT_NAME)
+              AGENT_NAME: $(RAG_AGENT_NAME)
+              APPLICATION_INSIGHTS_RESOURCE_NAME: $(GOVERNED_APPLICATION_INSIGHTS_NAME)
+              AZURE_AI_SEARCH_CONNECTION_ID: $(AZURE_AI_SEARCH_CONNECTION_ID)
               AZURE_AI_SEARCH_INDEX_NAME: pipeline-validation-index
-              AZURE_AI_SEARCH_QUERY_TYPE: $(searchQueryType)
-              AZURE_AI_SEARCH_TOP_K: $(searchTopK)
+              AZURE_AI_SEARCH_QUERY_TYPE: $(AZURE_AI_SEARCH_QUERY_TYPE)
+              AZURE_AI_SEARCH_TOP_K: $(AZURE_AI_SEARCH_TOP_K)
 
   - stage: Provision
     displayName: Provision Foundry projects
@@ -103,7 +79,7 @@ stages:
         displayName: Run idempotent Foundry provisioning
         pool:
           vmImage: windows-latest
-        environment: foundry-poc-infrastructure
+        environment: $(ADO_INFRASTRUCTURE_ENVIRONMENT_NAME)
         strategy:
           runOnce:
             deploy:
@@ -112,17 +88,25 @@ stages:
                 - task: AzureCLI@2
                   displayName: Create projects and monitoring resources
                   inputs:
-                    azureSubscription: ${{ parameters.infrastructureServiceConnection }}
+                    azureSubscription: $(ADO_INFRASTRUCTURE_SERVICE_CONNECTION)
                     scriptType: pscore
                     scriptLocation: inlineScript
                     workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc
                     inlineScript: |
                       .\deploy.ps1 `
-                        -SubscriptionId "$(subscriptionId)" `
-                        -TenantId "$(tenantId)" `
-                        -ResourceGroupName "$(resourceGroupName)" `
-                        -FoundryAccountName "$(foundryAccountName)" `
-                        -Location "$(location)"
+                        -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
+                        -TenantId "$(AZURE_TENANT_ID)" `
+                        -ResourceGroupName "$(AZURE_RESOURCE_GROUP)" `
+                        -FoundryAccountName "$(FOUNDRY_ACCOUNT_NAME)" `
+                        -Location "$(AZURE_LOCATION)" `
+                        -ExperimentationProjectName "$(EXPERIMENTATION_PROJECT_NAME)" `
+                        -ExperimentationProjectDisplayName "$(EXPERIMENTATION_PROJECT_DISPLAY_NAME)" `
+                        -ExperimentationLogAnalyticsName "$(EXPERIMENTATION_LOG_ANALYTICS_NAME)" `
+                        -ExperimentationApplicationInsightsName "$(EXPERIMENTATION_APPLICATION_INSIGHTS_NAME)" `
+                        -GovernedProjectName "$(GOVERNED_PROJECT_NAME)" `
+                        -GovernedProjectDisplayName "$(GOVERNED_PROJECT_DISPLAY_NAME)" `
+                        -GovernedLogAnalyticsName "$(GOVERNED_LOG_ANALYTICS_NAME)" `
+                        -GovernedApplicationInsightsName "$(GOVERNED_APPLICATION_INSIGHTS_NAME)"
 
   - stage: DeployAgents
     displayName: Create Foundry agent versions
@@ -143,7 +127,7 @@ stages:
         displayName: Create selected agents
         pool:
           vmImage: ubuntu-latest
-        environment: foundry-poc-agents
+        environment: $(ADO_AGENT_ENVIRONMENT_NAME)
         strategy:
           runOnce:
             deploy:
@@ -166,7 +150,7 @@ stages:
                     - task: AzureCLI@2
                       displayName: Create Prompt Agent version
                       inputs:
-                        azureSubscription: ${{ parameters.agentServiceConnection }}
+                        azureSubscription: $(ADO_AGENT_SERVICE_CONNECTION)
                         scriptType: bash
                         scriptLocation: inlineScript
                         workingDirectory: $(Build.SourcesDirectory)/foundry-agents-poc/02-governed-agents/01-prompt-agent
@@ -174,18 +158,18 @@ stages:
                           set -euo pipefail
                           python prompt_agent.py create | tee "$(Build.ArtifactStagingDirectory)/prompt-agent.json"
                       env:
-                        PROJECT_ENDPOINT: $(projectEndpoint)
-                        AZURE_TENANT_ID: $(tenantId)
+                        PROJECT_ENDPOINT: $(PROJECT_ENDPOINT)
+                        AZURE_TENANT_ID: $(AZURE_TENANT_ID)
                         AZURE_CLI_PROCESS_TIMEOUT: "60"
-                        MODEL_DEPLOYMENT_NAME: $(modelDeploymentName)
-                        AGENT_NAME: $(promptAgentName)
-                        APPLICATION_INSIGHTS_RESOURCE_NAME: $(applicationInsightsResourceName)
+                        MODEL_DEPLOYMENT_NAME: $(MODEL_DEPLOYMENT_NAME)
+                        AGENT_NAME: $(PROMPT_AGENT_NAME)
+                        APPLICATION_INSIGHTS_RESOURCE_NAME: $(GOVERNED_APPLICATION_INSIGHTS_NAME)
 
                 - ${{ if eq(parameters.createRagAgent, true) }}:
                     - task: AzureCLI@2
                       displayName: Create RAG Agent version
                       inputs:
-                        azureSubscription: ${{ parameters.agentServiceConnection }}
+                        azureSubscription: $(ADO_AGENT_SERVICE_CONNECTION)
                         scriptType: bash
                         scriptLocation: inlineScript
                         workingDirectory: $(Build.SourcesDirectory)/foundry-agents-poc/02-governed-agents/02-rag-agent
@@ -197,16 +181,16 @@ stages:
                           fi
                           python rag_agent.py create | tee "$(Build.ArtifactStagingDirectory)/rag-agent.json"
                       env:
-                        PROJECT_ENDPOINT: $(projectEndpoint)
-                        AZURE_TENANT_ID: $(tenantId)
+                        PROJECT_ENDPOINT: $(PROJECT_ENDPOINT)
+                        AZURE_TENANT_ID: $(AZURE_TENANT_ID)
                         AZURE_CLI_PROCESS_TIMEOUT: "60"
-                        MODEL_DEPLOYMENT_NAME: $(modelDeploymentName)
-                        AGENT_NAME: $(ragAgentName)
-                        APPLICATION_INSIGHTS_RESOURCE_NAME: $(applicationInsightsResourceName)
-                        AZURE_AI_SEARCH_CONNECTION_ID: $(searchConnectionId)
-                        AZURE_AI_SEARCH_INDEX_NAME: ${{ parameters.searchIndexName }}
-                        AZURE_AI_SEARCH_QUERY_TYPE: $(searchQueryType)
-                        AZURE_AI_SEARCH_TOP_K: $(searchTopK)
+                        MODEL_DEPLOYMENT_NAME: $(MODEL_DEPLOYMENT_NAME)
+                        AGENT_NAME: $(RAG_AGENT_NAME)
+                        APPLICATION_INSIGHTS_RESOURCE_NAME: $(GOVERNED_APPLICATION_INSIGHTS_NAME)
+                        AZURE_AI_SEARCH_CONNECTION_ID: $(AZURE_AI_SEARCH_CONNECTION_ID)
+                        AZURE_AI_SEARCH_INDEX_NAME: $(AZURE_AI_SEARCH_INDEX_NAME)
+                        AZURE_AI_SEARCH_QUERY_TYPE: $(AZURE_AI_SEARCH_QUERY_TYPE)
+                        AZURE_AI_SEARCH_TOP_K: $(AZURE_AI_SEARCH_TOP_K)
 
                 - task: PublishPipelineArtifact@1
                   displayName: Publish agent creation responses

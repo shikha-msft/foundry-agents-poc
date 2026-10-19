@@ -16,11 +16,11 @@ MAF Magentic workflow
         |
         +-- Prompt Specialist
         |      |
-        |      +-- gov-prompt-agent-poc (Foundry managed Prompt Agent)
+        |      +-- PROMPT_AGENT_NAME (Foundry managed Prompt Agent)
         |
         +-- Retrieval Specialist
         |      |
-        |      +-- gov-rag-agent-poc (Foundry managed RAG Agent)
+        |      +-- RAG_AGENT_NAME (Foundry managed RAG Agent)
         |
         +-- Autonomous Manager
                |
@@ -28,8 +28,8 @@ MAF Magentic workflow
                    with bounded rounds and no write tools
 ```
 
-The App Service system-assigned managed identity authenticates to the
-`poc-project`. The remote Prompt and RAG agents retain their own Foundry
+The App Service system-assigned managed identity authenticates to the project
+configured by `PROJECT_ENDPOINT`. The remote Prompt and RAG agents retain their own Foundry
 managed blueprints and Agent Identities. In particular, Search permissions
 remain on the RAG Agent Identity, not on the App Service identity.
 
@@ -37,8 +37,8 @@ remain on the RAG Agent Identity, not on the App Service identity.
 
 | Agent | Type | Responsibility |
 |---|---|---|
-| Prompt Specialist | MAF agent with a governed tool | Calls `gov-prompt-agent-poc` for reasoning and drafting |
-| Retrieval Specialist | MAF agent with a governed tool | Calls `gov-rag-agent-poc` and preserves citations |
+| Prompt Specialist | MAF agent with a governed tool | Calls `PROMPT_AGENT_NAME` for reasoning and drafting |
+| Retrieval Specialist | MAF agent with a governed tool | Calls `RAG_AGENT_NAME` and preserves citations |
 | Autonomous Manager | MAF Magentic manager | Builds a plan, delegates, and synthesizes the final response |
 
 Autonomy is bounded by:
@@ -66,13 +66,13 @@ Autonomy is bounded by:
 
 ## Prerequisites
 
-1. The Foundry project and `gpt-5.4-mini` deployment exist.
-2. `gov-prompt-agent-poc` exists and is active.
-3. `gov-rag-agent-poc` exists and its exact Agent Identity has **Search Index
+1. The Foundry project and `MODEL_DEPLOYMENT_NAME` deployment exist.
+2. `PROMPT_AGENT_NAME` exists and is active.
+3. `RAG_AGENT_NAME` exists and its exact Agent Identity has **Search Index
    Data Reader** on the approved Search service or index.
 4. The App Service managed identity has **Foundry User** on the Foundry
    account or the narrower supported project scope.
-5. `appi-agents-poc-aue-poc-project` exists.
+5. `GOVERNED_APPLICATION_INSIGHTS_NAME` exists.
 6. For authenticated production access, an Entra application registration is
    approved for App Service Easy Auth.
 
@@ -83,12 +83,13 @@ cd foundry-agents-poc\02-governed-agents\03-maf-multi-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
-az login --tenant 16b3c013-d300-468d-ac64-7eda0820b6d3
+az login
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-The checked-in local `.env` sets `REQUIRE_APP_SERVICE_AUTH=false`. Production
-must use Easy Auth and `REQUIRE_APP_SERVICE_AUTH=true`.
+Copy `.env.sample` to `.env` and set `REQUIRE_APP_SERVICE_AUTH=false` only for
+local development. The populated `.env` is ignored by Git. Production must use
+Easy Auth and `REQUIRE_APP_SERVICE_AUTH=true`.
 
 Test locally:
 
@@ -108,17 +109,15 @@ Endpoints:
 
 ## Deploy to Azure App Service
 
-Choose a globally unique web app name:
+Set `WEB_APP_NAME` and `ENTRA_CLIENT_ID` in the ignored `.env`, then run:
 
 ```powershell
-.\deploy.ps1 `
-  -WebAppName "<globally-unique-app-name>" `
-  -EntraClientId "<approved-entra-application-client-id>"
+.\deploy.ps1
 ```
 
 The script:
 
-1. Creates or updates a Linux B1 App Service plan and Python 3.12 web app.
+1. Creates or updates the configured Linux App Service plan and Python 3.12 web app.
 2. Enables a system-assigned managed identity.
 3. Assigns **Foundry User** to that identity.
 4. Configures the existing POC Foundry agents and Application Insights.
@@ -129,7 +128,7 @@ The script:
 For an infrastructure-only preview:
 
 ```powershell
-.\deploy.ps1 -WebAppName "<app-name>" -WhatIf
+.\deploy.ps1 -WhatIf
 ```
 
 Do not deploy production without `EntraClientId`. When it is omitted,
@@ -140,22 +139,23 @@ testing and the endpoint is not suitable for public production use.
 
 Create a pipeline from `03-maf-multi-agent/azure-pipelines.yml`.
 
-Pipeline parameters:
+Pipeline configuration is read from the
+`foundry-agents-poc-environment` Azure DevOps variable group:
 
-| Parameter | Purpose |
+| Variable | Purpose |
 |---|---|
-| `azureServiceConnection` | Workload-federated ARM service connection |
-| `webAppName` | Globally unique App Service name |
-| `entraClientId` | Approved Easy Auth application ID |
+| `ADO_APP_SERVICE_CONNECTION` | Workload-federated ARM service connection |
+| `WEB_APP_NAME` | Globally unique App Service name |
+| `ENTRA_CLIENT_ID` | Approved Easy Auth application ID |
 
 The service connection identity requires:
 
-- **Contributor** on `rg-foundry-demo` for App Service resources.
+- **Contributor** on `AZURE_RESOURCE_GROUP` for App Service resources.
 - **User Access Administrator** on the Foundry account only to assign
   **Foundry User** to the App Service managed identity.
 
-Configure an approval on the `foundry-poc-maf-app` Azure DevOps environment.
-The pipeline has no automatic trigger.
+Configure an approval on the Azure DevOps environment selected by the pipeline
+parameter. The pipeline has no automatic trigger.
 
 ## Observability
 

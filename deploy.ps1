@@ -1,10 +1,18 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string] $SubscriptionId = "c6a4ffe5-6f74-4846-b4e1-57386c4b7935",
-    [string] $TenantId = "16b3c013-d300-468d-ac64-7eda0820b6d3",
-    [string] $ResourceGroupName = "rg-foundry-demo",
-    [string] $FoundryAccountName = "ss-aueast-foundry",
-    [string] $Location = "australiaeast",
+    [string] $SubscriptionId,
+    [string] $TenantId,
+    [string] $ResourceGroupName,
+    [string] $FoundryAccountName,
+    [string] $Location,
+    [string] $ExperimentationProjectName,
+    [string] $ExperimentationProjectDisplayName,
+    [string] $ExperimentationLogAnalyticsName,
+    [string] $ExperimentationApplicationInsightsName,
+    [string] $GovernedProjectName,
+    [string] $GovernedProjectDisplayName,
+    [string] $GovernedLogAnalyticsName,
+    [string] $GovernedApplicationInsightsName,
     [ValidateRange(30, 730)]
     [int] $RetentionDays = 90,
     [switch] $SkipRoleAssignments
@@ -12,14 +20,85 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$projects = [ordered]@{
-    "playground-projects" = @{
-        DisplayName = "PlaygroundProjects"
-        Description = "Project for NoCode Experimentation Agents."
+function Import-DotEnv {
+    param([Parameter(Mandatory)][string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return
     }
-    "poc-project" = @{
-        DisplayName = "POC Project"
+
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $parts = $trimmed.Split("=", 2)
+        if ($parts.Count -ne 2) {
+            throw "Invalid .env entry in ${Path}: $line"
+        }
+
+        $name = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if (
+            $value.Length -ge 2 -and
+            (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+             ($value.StartsWith("'") -and $value.EndsWith("'")))
+        ) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+            [Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
+    }
+}
+
+function Resolve-Setting {
+    param(
+        [string] $ParameterValue,
+        [Parameter(Mandatory)][string] $EnvironmentName
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ParameterValue)) {
+        return $ParameterValue
+    }
+
+    $value = [Environment]::GetEnvironmentVariable($EnvironmentName)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Set $EnvironmentName in .env or pass the corresponding command-line parameter."
+    }
+    return $value
+}
+
+Import-DotEnv -Path (Join-Path $PSScriptRoot ".env")
+
+$SubscriptionId = Resolve-Setting $SubscriptionId "AZURE_SUBSCRIPTION_ID"
+$TenantId = Resolve-Setting $TenantId "AZURE_TENANT_ID"
+$ResourceGroupName = Resolve-Setting $ResourceGroupName "AZURE_RESOURCE_GROUP"
+$FoundryAccountName = Resolve-Setting $FoundryAccountName "FOUNDRY_ACCOUNT_NAME"
+$Location = Resolve-Setting $Location "AZURE_LOCATION"
+$ExperimentationProjectName = Resolve-Setting $ExperimentationProjectName "EXPERIMENTATION_PROJECT_NAME"
+$ExperimentationProjectDisplayName = Resolve-Setting $ExperimentationProjectDisplayName "EXPERIMENTATION_PROJECT_DISPLAY_NAME"
+$ExperimentationLogAnalyticsName = Resolve-Setting $ExperimentationLogAnalyticsName "EXPERIMENTATION_LOG_ANALYTICS_NAME"
+$ExperimentationApplicationInsightsName = Resolve-Setting $ExperimentationApplicationInsightsName "EXPERIMENTATION_APPLICATION_INSIGHTS_NAME"
+$GovernedProjectName = Resolve-Setting $GovernedProjectName "GOVERNED_PROJECT_NAME"
+$GovernedProjectDisplayName = Resolve-Setting $GovernedProjectDisplayName "GOVERNED_PROJECT_DISPLAY_NAME"
+$GovernedLogAnalyticsName = Resolve-Setting $GovernedLogAnalyticsName "GOVERNED_LOG_ANALYTICS_NAME"
+$GovernedApplicationInsightsName = Resolve-Setting $GovernedApplicationInsightsName "GOVERNED_APPLICATION_INSIGHTS_NAME"
+
+$projects = [ordered]@{
+    $ExperimentationProjectName = @{
+        DisplayName = $ExperimentationProjectDisplayName
+        Description = "Project for NoCode Experimentation Agents."
+        LogAnalyticsName = $ExperimentationLogAnalyticsName
+        ApplicationInsightsName = $ExperimentationApplicationInsightsName
+    }
+    $GovernedProjectName = @{
+        DisplayName = $GovernedProjectDisplayName
         Description = "Project for Governed POC Agents development."
+        LogAnalyticsName = $GovernedLogAnalyticsName
+        ApplicationInsightsName = $GovernedApplicationInsightsName
     }
 }
 
@@ -205,8 +284,8 @@ $deploymentOutput = [ordered]@{
 
 foreach ($projectName in $projects.Keys) {
     $projectConfiguration = $projects[$projectName]
-    $workspaceName = "log-agents-poc-aue-$projectName"
-    $appInsightsName = "appi-agents-poc-aue-$projectName"
+    $workspaceName = $projectConfiguration.LogAnalyticsName
+    $appInsightsName = $projectConfiguration.ApplicationInsightsName
 
     $projectId = "$foundryAccountId/projects/$projectName"
     $workspaceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.OperationalInsights/workspaces/$workspaceName"

@@ -47,7 +47,7 @@ cd foundry-agents-poc\02-governed-agents\02-rag-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-az login --tenant 16b3c013-d300-468d-ac64-7eda0820b6d3
+az login
 python rag_agent.py create
 ```
 
@@ -72,8 +72,10 @@ Run the parent [`azure-pipelines.yml`](../../azure-pipelines.yml) with:
 
 - `createPromptAgent`: select as required
 - `createRagAgent: true`
-- `searchIndexName`: the approved Azure AI Search index
-- `agentServiceConnection`: the approved workload-federated connection
+- `AZURE_AI_SEARCH_INDEX_NAME` in the approved variable group: the approved
+  Azure AI Search index
+- `ADO_AGENT_SERVICE_CONNECTION` in the approved variable group: the
+  workload-federated connection
 
 The pipeline validates the RAG definition, creates a new version, and
 publishes the creation response as a pipeline artifact. Assign **Search Index
@@ -100,13 +102,12 @@ Add `-WhatIf` to validate without creating a version.
 ## Create the agent
 
 1. Open [Microsoft Foundry](https://ai.azure.com).
-2. Select `POC Project`.
+2. Select the project configured by `GOVERNED_PROJECT_DISPLAY_NAME`.
 3. Open **Build** or **Agents**.
 4. Select **Create agent** and choose **Prompt agent**.
-5. Use the initial name `gov-rag-agent-poc`.
-6. Select the approved `gpt-5.4-mini` model deployment. The current approved
-   embedding deployment for the ingestion pipeline is
-   `text-embedding-3-small`.
+5. Use the agent name configured by `AGENT_NAME`.
+6. Select the approved model configured by `MODEL_DEPLOYMENT_NAME` and the
+   separately approved embedding deployment for the ingestion pipeline.
 7. Open **Knowledge**, **Tools**, or **Toolbox**.
 8. Add the approved Azure AI Search connection.
 9. Select one approved index.
@@ -181,8 +182,8 @@ For direct data tools:
 
 The agent must use:
 
-- `appi-agents-poc-aue-poc-project`
-- `log-agents-poc-aue-poc-project`
+- `APPLICATION_INSIGHTS_RESOURCE_NAME`
+- the Log Analytics workspace connected to that Application Insights resource
 
 Confirm traces include agent version, Agent Identity correlation, model call,
 retrieval query timing, result count, citation outcome, dependency status, and

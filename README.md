@@ -3,10 +3,10 @@
 This proof of concept uses Azure CLI commands to create two Microsoft Foundry
 V2 projects under an existing Foundry account:
 
-| Azure resource name | Display name | Intended use |
+| Configuration variable | Display-name variable | Intended use |
 |---|---|---|
-| `playground-projects` | `PlaygroundProjects` | NoCode Experimentation Agents |
-| `poc-project` | `POC Project` | Governed POC Agents development |
+| `EXPERIMENTATION_PROJECT_NAME` | `EXPERIMENTATION_PROJECT_DISPLAY_NAME` | NoCode Experimentation Agents |
+| `GOVERNED_PROJECT_NAME` | `GOVERNED_PROJECT_DISPLAY_NAME` | Governed POC Agents development |
 
 ## Implementation guides
 
@@ -25,23 +25,27 @@ receives:
 - `Log Analytics Reader` and `Privileged Monitoring Data Reader` on its
   Application Insights component.
 
-## Existing account
+## Environment configuration
 
-The script defaults target:
+Copy the customer-safe template and populate the local configuration:
 
-- Subscription: `c6a4ffe5-6f74-4846-b4e1-57386c4b7935`
-- Resource group: `rg-foundry-demo`
-- Foundry account: `ss-aueast-foundry`
-- Region: `australiaeast`
+```powershell
+Copy-Item .env.sample .env
+```
+
+The root `.env` contains the subscription, tenant, resource group, Foundry
+account, project, monitoring, Search, and App Service names for the selected
+environment. It is excluded by `.gitignore`; never commit it. `.env.sample`
+contains placeholders only and remains safe to share.
 
 The script validates that the account is an `AIServices` account, is in the
 expected region, and has Foundry project management enabled.
 
 ## Prerequisites
 
-1. Azure CLI authenticated to tenant
-   `16b3c013-d300-468d-ac64-7eda0820b6d3`.
-2. Permission to create resources in `rg-foundry-demo`.
+1. Azure CLI authenticated to the tenant configured by `AZURE_TENANT_ID`.
+2. Permission to create resources in the resource group configured by
+   `AZURE_RESOURCE_GROUP`.
 3. Permission to create role assignments on the existing Foundry account and
    the new Application Insights components.
 4. Registered resource providers:
@@ -67,7 +71,7 @@ To validate prerequisites and show the actions without creating resources:
 .\deploy.ps1 -WhatIf
 ```
 
-Optional overrides:
+Command-line parameters can override values loaded from `.env`:
 
 ```powershell
 .\deploy.ps1 `
@@ -96,27 +100,31 @@ produces a new immutable version. Run it manually and select:
 
 | Parameter | Default | Purpose |
 |---|---:|---|
-| `agentServiceConnection` | `foundry-poc-agent-wif` | Least-privilege agent deployment connection using workload identity federation |
-| `infrastructureServiceConnection` | `foundry-poc-infra-wif` | Elevated infrastructure connection used only when provisioning is selected |
 | `provisionInfrastructure` | `false` | Run `deploy.ps1` before creating agents |
-| `createPromptAgent` | `true` | Create a new `gov-prompt-agent-poc` version |
-| `createRagAgent` | `false` | Create a new `gov-rag-agent-poc` version |
-| `searchIndexName` | Empty | Required when `createRagAgent` is selected |
+| `createPromptAgent` | `true` | Create a new `PROMPT_AGENT_NAME` version |
+| `createRagAgent` | `false` | Create a new `RAG_AGENT_NAME` version |
 
 ### Pipeline setup
 
-1. Create an Azure Resource Manager service connection using **workload
-   identity federation**. Name it `foundry-poc-agent-wif`, or enter its actual
-   name when the pipeline is queued. Do not create a client secret.
-2. Grant its identity **Foundry User** on `poc-project` for agent creation.
-3. If the pipeline will provision infrastructure, create a separate
-   workload-federated connection named `foundry-poc-infra-wif`. Grant its
-   identity **Contributor** on `rg-foundry-demo` and **User Access
+1. Create the Azure DevOps variable group named
+   `foundry-agents-poc-environment` using the variables listed in
+   `.env.sample`.
+2. Create an Azure Resource Manager service connection using **workload
+   identity federation** and set its name in the variable group's
+   `ADO_AGENT_SERVICE_CONNECTION`. Do not create a client secret.
+3. Grant its identity **Foundry User** on the project identified by
+   `GOVERNED_PROJECT_NAME` for agent creation.
+4. If the pipeline will provision infrastructure, create a separate
+   workload-federated connection and set its name in
+   `ADO_INFRASTRUCTURE_SERVICE_CONNECTION`. Grant its identity
+   **Contributor** on
+   `AZURE_RESOURCE_GROUP` and **User Access
    Administrator** only on the scopes where `deploy.ps1` creates role
    assignments.
-4. Create the Azure DevOps environments `foundry-poc-infrastructure` and
-   `foundry-poc-agents`, then configure the required approvals and checks.
-5. Create a pipeline from `foundry-agents-poc/azure-pipelines.yml`.
+5. Set `ADO_INFRASTRUCTURE_ENVIRONMENT_NAME` and
+   `ADO_AGENT_ENVIRONMENT_NAME` to the approved Azure DevOps environment
+   names, then configure their approvals and checks.
+6. Create a pipeline from `foundry-agents-poc/azure-pipelines.yml`.
 
 The pipeline authenticates with `AzureCLI@2`; the Python SDK then uses that
 federated Azure CLI session. It does not upload either local `.env` file and

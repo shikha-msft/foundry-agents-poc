@@ -29,7 +29,7 @@ cd foundry-agents-poc\02-governed-agents\01-prompt-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-az login --tenant 16b3c013-d300-468d-ac64-7eda0820b6d3
+az login
 python prompt_agent.py create
 ```
 
@@ -53,7 +53,8 @@ Run the parent [`azure-pipelines.yml`](../../azure-pipelines.yml) with:
 
 - `createPromptAgent: true`
 - `createRagAgent: false`
-- `agentServiceConnection`: the approved workload-federated connection
+- `ADO_AGENT_SERVICE_CONNECTION` in the approved variable group: the
+  workload-federated connection
 
 The pipeline validates the code, obtains Azure authentication through
 `AzureCLI@2`, creates a new version, and publishes the creation response as a
@@ -78,12 +79,12 @@ CLI, `azd`, and pipeline paths create the same agent configuration. Add
 ## Create the agent
 
 1. Open [Microsoft Foundry](https://ai.azure.com).
-2. Select `POC Project`.
+2. Select the project configured by `GOVERNED_PROJECT_DISPLAY_NAME`.
 3. Open **Build** or **Agents**.
 4. Select **Create agent** and choose **Prompt agent**.
-5. Use the initial name `gov-prompt-agent-poc`.
-6. Select the approved `gpt-5.4-mini` model deployment. Use `gpt-5-mini` only
-   after recording the reason for the alternative.
+5. Use the agent name configured by `AGENT_NAME`.
+6. Select the approved model configured by `MODEL_DEPLOYMENT_NAME`. Use an
+   alternative only after recording the reason.
 7. Configure the platform-approved model parameters and content filters.
 8. Add the following initial instructions and adapt only the business-specific
    sections.
@@ -135,8 +136,8 @@ principal, Agent Identity, and agent GUID.
 
 The agent must use:
 
-- `appi-agents-poc-aue-poc-project`
-- `log-agents-poc-aue-poc-project`
+- `APPLICATION_INSIGHTS_RESOURCE_NAME`
+- the Log Analytics workspace connected to that Application Insights resource
 
 Confirm traces include the governed agent version, model call, tool calls,
 latency, status, and distinct Agent Identity correlation.

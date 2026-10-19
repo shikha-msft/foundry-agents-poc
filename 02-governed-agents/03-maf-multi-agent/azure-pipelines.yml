@@ -1,20 +1,10 @@
 trigger: none
 pr: none
 
-parameters:
-  - name: azureServiceConnection
-    displayName: App Service deployment workload identity connection
-    type: string
-    default: foundry-poc-app-wif
-  - name: webAppName
-    displayName: Globally unique App Service name
-    type: string
-  - name: entraClientId
-    displayName: Entra application client ID for Easy Auth (optional)
-    type: string
-    default: ""
 variables:
-  pythonVersion: "3.12"
+  - group: foundry-agents-poc-environment
+  - name: pythonVersion
+    value: "3.12"
 
 stages:
   - stage: Validate
@@ -42,7 +32,7 @@ stages:
       - deployment: DeployMafApp
         pool:
           vmImage: windows-latest
-        environment: foundry-poc-maf-app
+        environment: $(ADO_MAF_ENVIRONMENT_NAME)
         strategy:
           runOnce:
             deploy:
@@ -51,11 +41,23 @@ stages:
                 - task: AzureCLI@2
                   displayName: Provision and deploy MAF App Service
                   inputs:
-                    azureSubscription: ${{ parameters.azureServiceConnection }}
+                    azureSubscription: $(ADO_APP_SERVICE_CONNECTION)
                     scriptType: pscore
                     scriptLocation: inlineScript
                     workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc\02-governed-agents\03-maf-multi-agent
                     inlineScript: |
                       .\deploy.ps1 `
-                        -WebAppName "${{ parameters.webAppName }}" `
-                        -EntraClientId "${{ parameters.entraClientId }}"
+                        -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
+                        -TenantId "$(AZURE_TENANT_ID)" `
+                        -ResourceGroupName "$(AZURE_RESOURCE_GROUP)" `
+                        -Location "$(AZURE_LOCATION)" `
+                        -AppServicePlanName "$(APP_SERVICE_PLAN_NAME)" `
+                        -WebAppName "$(WEB_APP_NAME)" `
+                        -Sku "$(APP_SERVICE_SKU)" `
+                        -FoundryAccountName "$(FOUNDRY_ACCOUNT_NAME)" `
+                        -ProjectEndpoint "$(PROJECT_ENDPOINT)" `
+                        -ModelDeploymentName "$(MODEL_DEPLOYMENT_NAME)" `
+                        -PromptAgentName "$(PROMPT_AGENT_NAME)" `
+                        -RagAgentName "$(RAG_AGENT_NAME)" `
+                        -ApplicationInsightsName "$(GOVERNED_APPLICATION_INSIGHTS_NAME)" `
+                        -EntraClientId "$(ENTRA_CLIENT_ID)"

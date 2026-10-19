@@ -1,7 +1,8 @@
 # 01 - NoCode Experimentation Agents
 
 This guide explains how a developer creates and tests a prompt agent in the
-Microsoft Foundry portal using the `PlaygroundProjects` project.
+Microsoft Foundry portal using the project configured by
+`EXPERIMENTATION_PROJECT_DISPLAY_NAME`.
 
 This project is for experimentation with synthetic or non-sensitive data. It
 uses the Foundry project's shared managed identity for approved runtime access.
@@ -12,13 +13,13 @@ data access, independent lifecycle, or a different authorization boundary.
 
 | Setting | Value |
 |---|---|
-| Foundry account | `ss-aueast-foundry` |
-| Foundry project resource name | `playground-projects` |
-| Foundry project display name | `PlaygroundProjects` |
+| Foundry account | `FOUNDRY_ACCOUNT_NAME` |
+| Foundry project resource name | `EXPERIMENTATION_PROJECT_NAME` |
+| Foundry project display name | `EXPERIMENTATION_PROJECT_DISPLAY_NAME` |
 | Purpose | NoCode Experimentation Agents |
-| Region | Australia East |
-| Application Insights | `appi-agents-poc-aue-playground-projects` |
-| Log Analytics workspace | `log-agents-poc-aue-playground-projects` |
+| Region | `AZURE_LOCATION` |
+| Application Insights | `EXPERIMENTATION_APPLICATION_INSIGHTS_NAME` |
+| Log Analytics workspace | `EXPERIMENTATION_LOG_ANALYTICS_NAME` |
 
 ## 1. Prerequisites
 
@@ -26,7 +27,8 @@ data access, independent lifecycle, or a different authorization boundary.
 
 The platform owner must complete these items before a developer starts:
 
-- [ ] Create the Foundry V2 account and `PlaygroundProjects` project.
+- [ ] Create the Foundry V2 account and the project configured by
+      `EXPERIMENTATION_PROJECT_NAME`.
 - [ ] Enable the project system-assigned managed identity.
 - [ ] Deploy at least one approved model to the parent Foundry account.
 - [ ] Assign **Foundry User** to the project managed identity on the parent
@@ -49,7 +51,7 @@ developers where possible.
 
 | Principal | Role | Scope | Purpose |
 |---|---|---|---|
-| Developer group | **Foundry User** | `playground-projects` project | Create, edit, test, and delete prompt agents |
+| Developer group | **Foundry User** | `EXPERIMENTATION_PROJECT_NAME` project | Create, edit, test, and delete prompt agents |
 | Developer group | **Reader** | Parent Foundry account | Find the project and navigate its parent resource |
 | Developer group | **Azure Monitor Reader** | Project Application Insights | View agent traces and metrics |
 | Developer group | **Log Analytics Reader** | Project Log Analytics workspace | Run approved log queries |
@@ -80,7 +82,7 @@ The identity making the data request needs data-plane access. The developer's
 portal role does not provide this access.
 
 For this experimentation project, the default runtime principal is the
-**system-assigned managed identity of `playground-projects`**. If an MCP,
+**system-assigned managed identity of `EXPERIMENTATION_PROJECT_NAME`**. If an MCP,
 OpenAPI, or function tool runs in a separate App Service, Function App,
 Container App, or AKS workload, that tool's managed identity is the runtime
 principal instead.
@@ -131,8 +133,8 @@ the same.
 1. Go to [Microsoft Foundry](https://ai.azure.com).
 2. Sign in with the Entra account that belongs to the developer group.
 3. Confirm the active directory and subscription are correct.
-4. Open the `PlaygroundProjects` project.
-5. Confirm the project resource name is `playground-projects`.
+4. Open the project identified by `EXPERIMENTATION_PROJECT_DISPLAY_NAME`.
+5. Confirm its resource name matches `EXPERIMENTATION_PROJECT_NAME`.
 
 Stop if the project is missing or if the portal returns `403`. Ask the platform
 owner to verify `Foundry User` on the project and `Reader` on the parent
@@ -364,14 +366,12 @@ console to the agent.
 
 ## 5. Monitoring and observability - enabled by default
 
-Monitoring is mandatory for every agent in `PlaygroundProjects`.
+Monitoring is mandatory for every agent in the experimentation project.
 
 The project is already connected to:
 
-- Application Insights:
-  `appi-agents-poc-aue-playground-projects`
-- Log Analytics:
-  `log-agents-poc-aue-playground-projects`
+- Application Insights: `EXPERIMENTATION_APPLICATION_INSIGHTS_NAME`
+- Log Analytics: `EXPERIMENTATION_LOG_ANALYTICS_NAME`
 
 Developers must not create a separate monitoring resource for each agent or
 disable project tracing.
@@ -425,7 +425,7 @@ responsibilities.
 
 ## 6. Completion checklist
 
-- [ ] Developer has `Foundry User` on `playground-projects`.
+- [ ] Developer has `Foundry User` on `EXPERIMENTATION_PROJECT_NAME`.
 - [ ] Developer can see an approved model but cannot deploy a model.
 - [ ] Project managed identity has `Foundry User` on the parent account.
 - [ ] Agent uses only approved connections and tools.
@@ -453,4 +453,3 @@ responsibilities.
 - [Azure Blob Storage authorization](https://learn.microsoft.com/azure/storage/blobs/authorize-access-azure-active-directory)
 - [Cosmos DB data-plane RBAC](https://learn.microsoft.com/azure/cosmos-db/nosql/security/how-to-grant-data-plane-access)
 - [PostgreSQL managed-identity authentication](https://learn.microsoft.com/azure/postgresql/security/security-connect-with-managed-identity)
-

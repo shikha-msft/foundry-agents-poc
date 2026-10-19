@@ -8,7 +8,7 @@ from app.configuration import Settings
 def test_settings_load_governed_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "PROJECT_ENDPOINT",
-        "https://example.services.ai.azure.com/api/projects/poc-project",
+        "https://example.services.ai.azure.com/api/projects/example-project",
     )
     monkeypatch.setenv("AZURE_TENANT_ID", "tenant")
     monkeypatch.setenv("MODEL_DEPLOYMENT_NAME", "gpt-5.4-mini")

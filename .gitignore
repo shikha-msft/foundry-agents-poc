@@ -1,4 +1,5 @@
 deployment-output.json
+.env
 **/.env
 **/__pycache__/
 **/*.py[cod]
