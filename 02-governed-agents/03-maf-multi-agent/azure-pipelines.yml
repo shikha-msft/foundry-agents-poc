@@ -1,0 +1,61 @@
+trigger: none
+pr: none
+
+parameters:
+  - name: azureServiceConnection
+    displayName: App Service deployment workload identity connection
+    type: string
+    default: foundry-poc-app-wif
+  - name: webAppName
+    displayName: Globally unique App Service name
+    type: string
+  - name: entraClientId
+    displayName: Entra application client ID for Easy Auth (optional)
+    type: string
+    default: ""
+variables:
+  pythonVersion: "3.12"
+
+stages:
+  - stage: Validate
+    jobs:
+      - job: Test
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+          - bash: |
+              set -euo pipefail
+              python -m pip install -r requirements-dev.txt
+              python -m pytest
+              python -m ruff check app tests
+              python -m ruff format --check app tests
+              python -m compileall -q app
+            displayName: Test MAF application
+
+  - stage: Deploy
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - deployment: DeployMafApp
+        pool:
+          vmImage: windows-latest
+        environment: foundry-poc-maf-app
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureCLI@2
+                  displayName: Provision and deploy MAF App Service
+                  inputs:
+                    azureSubscription: ${{ parameters.azureServiceConnection }}
+                    scriptType: pscore
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc\02-governed-agents\03-maf-multi-agent
+                    inlineScript: |
+                      .\deploy.ps1 `
+                        -WebAppName "${{ parameters.webAppName }}" `
+                        -EntraClientId "${{ parameters.entraClientId }}"

@@ -1,0 +1,216 @@
+trigger: none
+pr: none
+
+parameters:
+  - name: agentServiceConnection
+    displayName: Agent deployment workload identity service connection
+    type: string
+    default: foundry-poc-agent-wif
+  - name: infrastructureServiceConnection
+    displayName: Infrastructure workload identity service connection
+    type: string
+    default: foundry-poc-infra-wif
+  - name: provisionInfrastructure
+    displayName: Create or update Foundry projects and monitoring
+    type: boolean
+    default: false
+  - name: createPromptAgent
+    displayName: Create a new Prompt Agent version
+    type: boolean
+    default: true
+  - name: createRagAgent
+    displayName: Create a new RAG Agent version
+    type: boolean
+    default: false
+  - name: searchIndexName
+    displayName: Azure AI Search index name (required for RAG)
+    type: string
+    default: ""
+
+variables:
+  pythonVersion: "3.12"
+  subscriptionId: c6a4ffe5-6f74-4846-b4e1-57386c4b7935
+  tenantId: 16b3c013-d300-468d-ac64-7eda0820b6d3
+  resourceGroupName: rg-foundry-demo
+  foundryAccountName: ss-aueast-foundry
+  location: australiaeast
+  projectEndpoint: https://ss-aueast-foundry.services.ai.azure.com/api/projects/poc-project
+  modelDeploymentName: gpt-5.4-mini
+  applicationInsightsResourceName: appi-agents-poc-aue-poc-project
+  promptAgentName: gov-prompt-agent-poc
+  ragAgentName: gov-rag-agent-poc
+  searchConnectionId: /subscriptions/c6a4ffe5-6f74-4846-b4e1-57386c4b7935/resourceGroups/rg-foundry-demo/providers/Microsoft.CognitiveServices/accounts/ss-aueast-foundry/projects/poc-project/connections/ss-aueast-foundry-aisearch
+  searchQueryType: vector_semantic_hybrid
+  searchTopK: "5"
+
+stages:
+  - stage: Validate
+    displayName: Validate agent code
+    jobs:
+      - job: ValidateAgents
+        displayName: Validate Prompt and RAG agents
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UsePythonVersion@0
+            displayName: Use Python $(pythonVersion)
+            inputs:
+              versionSpec: $(pythonVersion)
+
+          - bash: |
+              set -euo pipefail
+              python -m pip install \
+                -r 01-prompt-agent/requirements.txt \
+                -r 02-rag-agent/requirements.txt \
+                "ruff>=0.11,<1"
+              python -m ruff check 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
+              python -m ruff format --check 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
+              python -m py_compile 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
+            workingDirectory: foundry-agents-poc/02-governed-agents
+            displayName: Install and validate Python
+
+          - bash: |
+              set -euo pipefail
+              python - <<'PY'
+              import rag_agent
+
+              settings = rag_agent.Settings.from_environment()
+              definition = rag_agent._definition(settings).as_dict()
+              index = definition["tools"][0]["azure_ai_search"]["indexes"][0]
+              assert index["project_connection_id"] == settings.search_connection_id
+              assert index["index_name"] == settings.search_index_name
+              print("RAG definition validation passed.")
+              PY
+            workingDirectory: foundry-agents-poc/02-governed-agents/02-rag-agent
+            displayName: Validate RAG definition
+            env:
+              PROJECT_ENDPOINT: $(projectEndpoint)
+              AZURE_TENANT_ID: $(tenantId)
+              MODEL_DEPLOYMENT_NAME: $(modelDeploymentName)
+              AGENT_NAME: $(ragAgentName)
+              APPLICATION_INSIGHTS_RESOURCE_NAME: $(applicationInsightsResourceName)
+              AZURE_AI_SEARCH_CONNECTION_ID: $(searchConnectionId)
+              AZURE_AI_SEARCH_INDEX_NAME: pipeline-validation-index
+              AZURE_AI_SEARCH_QUERY_TYPE: $(searchQueryType)
+              AZURE_AI_SEARCH_TOP_K: $(searchTopK)
+
+  - stage: Provision
+    displayName: Provision Foundry projects
+    dependsOn: Validate
+    condition: and(succeeded(), ${{ eq(parameters.provisionInfrastructure, true) }})
+    jobs:
+      - deployment: ProvisionFoundry
+        displayName: Run idempotent Foundry provisioning
+        pool:
+          vmImage: windows-latest
+        environment: foundry-poc-infrastructure
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureCLI@2
+                  displayName: Create projects and monitoring resources
+                  inputs:
+                    azureSubscription: ${{ parameters.infrastructureServiceConnection }}
+                    scriptType: pscore
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc
+                    inlineScript: |
+                      .\deploy.ps1 `
+                        -SubscriptionId "$(subscriptionId)" `
+                        -TenantId "$(tenantId)" `
+                        -ResourceGroupName "$(resourceGroupName)" `
+                        -FoundryAccountName "$(foundryAccountName)" `
+                        -Location "$(location)"
+
+  - stage: DeployAgents
+    displayName: Create Foundry agent versions
+    dependsOn:
+      - Validate
+      - Provision
+    condition: |
+      and(
+        in(dependencies.Validate.result, 'Succeeded', 'SucceededWithIssues'),
+        in(dependencies.Provision.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
+        or(
+          ${{ eq(parameters.createPromptAgent, true) }},
+          ${{ eq(parameters.createRagAgent, true) }}
+        )
+      )
+    jobs:
+      - deployment: CreateAgents
+        displayName: Create selected agents
+        pool:
+          vmImage: ubuntu-latest
+        environment: foundry-poc-agents
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: UsePythonVersion@0
+                  displayName: Use Python $(pythonVersion)
+                  inputs:
+                    versionSpec: $(pythonVersion)
+
+                - bash: |
+                    set -euo pipefail
+                    python -m pip install \
+                      -r 01-prompt-agent/requirements.txt \
+                      -r 02-rag-agent/requirements.txt
+                  workingDirectory: foundry-agents-poc/02-governed-agents
+                  displayName: Install agent dependencies
+
+                - ${{ if eq(parameters.createPromptAgent, true) }}:
+                    - task: AzureCLI@2
+                      displayName: Create Prompt Agent version
+                      inputs:
+                        azureSubscription: ${{ parameters.agentServiceConnection }}
+                        scriptType: bash
+                        scriptLocation: inlineScript
+                        workingDirectory: $(Build.SourcesDirectory)/foundry-agents-poc/02-governed-agents/01-prompt-agent
+                        inlineScript: |
+                          set -euo pipefail
+                          python prompt_agent.py create | tee "$(Build.ArtifactStagingDirectory)/prompt-agent.json"
+                      env:
+                        PROJECT_ENDPOINT: $(projectEndpoint)
+                        AZURE_TENANT_ID: $(tenantId)
+                        AZURE_CLI_PROCESS_TIMEOUT: "60"
+                        MODEL_DEPLOYMENT_NAME: $(modelDeploymentName)
+                        AGENT_NAME: $(promptAgentName)
+                        APPLICATION_INSIGHTS_RESOURCE_NAME: $(applicationInsightsResourceName)
+
+                - ${{ if eq(parameters.createRagAgent, true) }}:
+                    - task: AzureCLI@2
+                      displayName: Create RAG Agent version
+                      inputs:
+                        azureSubscription: ${{ parameters.agentServiceConnection }}
+                        scriptType: bash
+                        scriptLocation: inlineScript
+                        workingDirectory: $(Build.SourcesDirectory)/foundry-agents-poc/02-governed-agents/02-rag-agent
+                        inlineScript: |
+                          set -euo pipefail
+                          if [ -z "${AZURE_AI_SEARCH_INDEX_NAME:-}" ]; then
+                            echo "##vso[task.logissue type=error]AZURE_AI_SEARCH_INDEX_NAME must be defined as a pipeline variable."
+                            exit 1
+                          fi
+                          python rag_agent.py create | tee "$(Build.ArtifactStagingDirectory)/rag-agent.json"
+                      env:
+                        PROJECT_ENDPOINT: $(projectEndpoint)
+                        AZURE_TENANT_ID: $(tenantId)
+                        AZURE_CLI_PROCESS_TIMEOUT: "60"
+                        MODEL_DEPLOYMENT_NAME: $(modelDeploymentName)
+                        AGENT_NAME: $(ragAgentName)
+                        APPLICATION_INSIGHTS_RESOURCE_NAME: $(applicationInsightsResourceName)
+                        AZURE_AI_SEARCH_CONNECTION_ID: $(searchConnectionId)
+                        AZURE_AI_SEARCH_INDEX_NAME: ${{ parameters.searchIndexName }}
+                        AZURE_AI_SEARCH_QUERY_TYPE: $(searchQueryType)
+                        AZURE_AI_SEARCH_TOP_K: $(searchTopK)
+
+                - task: PublishPipelineArtifact@1
+                  displayName: Publish agent creation responses
+                  inputs:
+                    targetPath: $(Build.ArtifactStagingDirectory)
+                    artifact: foundry-agent-responses
+                    publishLocation: pipeline
