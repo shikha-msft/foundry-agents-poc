@@ -26,6 +26,17 @@ parameters:
     displayName: Create a new RAG Agent version
     type: boolean
     default: false
+  - name: ragIndexMode
+    displayName: RAG index - reuse existing or create synthetic PoC data
+    type: string
+    default: existing
+    values:
+      - existing
+      - create
+  - name: ragIndexName
+    displayName: RAG index name (defaults to the environment variable group)
+    type: string
+    default: $(AZURE_AI_SEARCH_INDEX_NAME)
   - name: enableAgent365Foundry
     displayName: Enable Agent 365 data collection on the Foundry resource
     type: boolean
@@ -58,11 +69,14 @@ stages:
               set -euo pipefail
               python -m pip install \
                 -r 01-prompt-agent/requirements.txt \
-                -r 02-rag-agent/requirements.txt \
+                -r 02-rag-agent/requirements-dev.txt \
                 "ruff>=0.11,<1"
-              python -m ruff check 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
-              python -m ruff format --check 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
-              python -m py_compile 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
+              python -m ruff check \
+                --config 'lint.isort.known-first-party = ["rag_agent", "search_index"]' \
+                01-prompt-agent/prompt_agent.py 02-rag-agent
+              python -m ruff format --check 01-prompt-agent/prompt_agent.py 02-rag-agent
+              python -m compileall -q 01-prompt-agent/prompt_agent.py 02-rag-agent
+              python -m pytest 02-rag-agent/tests
             workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents
             displayName: Install and validate Python
 
@@ -233,7 +247,7 @@ stages:
                             echo "##vso[task.logissue type=error]AZURE_AI_SEARCH_INDEX_NAME must be defined as a pipeline variable."
                             exit 1
                           fi
-                          python rag_agent.py create | tee "$(Build.ArtifactStagingDirectory)/rag-agent.json"
+                          python rag_agent.py create --index-mode "$RAG_INDEX_MODE" | tee "$(Build.ArtifactStagingDirectory)/rag-agent.json"
                       env:
                         PROJECT_ENDPOINT: $(PROJECT_ENDPOINT)
                         AZURE_TENANT_ID: $(AZURE_TENANT_ID)
@@ -242,9 +256,12 @@ stages:
                         AGENT_NAME: $(RAG_AGENT_NAME)
                         APPLICATION_INSIGHTS_RESOURCE_NAME: $(GOVERNED_APPLICATION_INSIGHTS_NAME)
                         AZURE_AI_SEARCH_CONNECTION_ID: $(AZURE_AI_SEARCH_CONNECTION_ID)
-                        AZURE_AI_SEARCH_INDEX_NAME: $(AZURE_AI_SEARCH_INDEX_NAME)
+                        AZURE_AI_SEARCH_INDEX_NAME: ${{ parameters.ragIndexName }}
+                        RAG_INDEX_MODE: ${{ parameters.ragIndexMode }}
                         AZURE_AI_SEARCH_QUERY_TYPE: $(AZURE_AI_SEARCH_QUERY_TYPE)
                         AZURE_AI_SEARCH_TOP_K: $(AZURE_AI_SEARCH_TOP_K)
+                        AZURE_AI_EMBEDDING_ENDPOINT: $(AZURE_AI_EMBEDDING_ENDPOINT)
+                        AZURE_AI_EMBEDDING_DEPLOYMENT_NAME: $(AZURE_AI_EMBEDDING_DEPLOYMENT_NAME)
 
                 - task: PublishPipelineArtifact@1
                   displayName: Publish agent creation responses

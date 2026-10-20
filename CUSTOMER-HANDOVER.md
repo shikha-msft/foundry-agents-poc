@@ -174,8 +174,13 @@ Follow the [Prompt setup](./02-governed-agents/01-prompt-agent/README.md) and
 Configure each folder's `.env` **before** `create` or `invoke`.
 
 1. Create the Prompt Agent with synthetic data; record its name/version.
-2. For RAG, first create/approve the Search connection and populated index.
-   Validate vector/semantic settings against the actual schema.
+2. For RAG, approve the existing Search service and project connection.
+   Choose `existing` mode with an approved populated index (the default), or
+   explicitly select `create` for a new, seeded synthetic index as described in
+   the [RAG index options](./02-governed-agents/02-rag-agent/README.md#choose-an-existing-index-or-create-a-synthetic-index).
+   Synthetic creation needs pre-approved ingestion/embedding permissions; it
+   does not provision the service or grant roles. Validate vector/semantic
+   settings against the actual schema.
 3. Create the RAG Agent; save its creation response in restricted evidence.
 4. Resolve and verify its actual identity as described below.
 5. Grant approved read access to the verified retrieval principal.

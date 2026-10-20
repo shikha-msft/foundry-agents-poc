@@ -23,6 +23,8 @@ from azure.identity import (
 )
 from dotenv import load_dotenv
 
+from search_index import IndexOptions, prepare_index, validate_index_name
+
 _ROOT = Path(__file__).resolve().parent
 
 
@@ -40,7 +42,7 @@ class Settings:
     search_top_k: int
 
     @classmethod
-    def from_environment(cls) -> Settings:
+    def from_environment(cls, *, index_name: str | None = None) -> Settings:
         load_dotenv(_ROOT / ".env", override=False)
         timeout = _integer("AZURE_CLI_PROCESS_TIMEOUT", default=60, minimum=1)
         top_k = _integer("AZURE_AI_SEARCH_TOP_K", default=5, minimum=1, maximum=50)
@@ -54,7 +56,11 @@ class Settings:
             ),
             azure_cli_process_timeout=timeout,
             search_connection_id=_required("AZURE_AI_SEARCH_CONNECTION_ID"),
-            search_index_name=_required("AZURE_AI_SEARCH_INDEX_NAME"),
+            search_index_name=(
+                index_name.strip()
+                if index_name is not None
+                else _required("AZURE_AI_SEARCH_INDEX_NAME")
+            ),
             search_query_type=_required("AZURE_AI_SEARCH_QUERY_TYPE"),
             search_top_k=top_k,
         )
@@ -64,6 +70,7 @@ class Settings:
             raise ValueError(
                 "PROJECT_ENDPOINT must identify a Microsoft Foundry project."
             )
+        validate_index_name(settings.search_index_name)
         return settings
 
 
@@ -167,13 +174,31 @@ def invoke_agent(client: AIProjectClient, settings: Settings, message: str) -> s
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage the governed RAG Agent.")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("create", help="Create a new RAG Agent version.")
+    create = commands.add_parser(
+        "create", help="Prepare an index and create an agent version."
+    )
+    prepare = commands.add_parser(
+        "prepare-index",
+        help="Select an existing index or create a synthetic PoC index.",
+    )
+    for command in (create, prepare):
+        command.add_argument(
+            "--index-mode",
+            choices=("existing", "create"),
+            help="Defaults to AZURE_AI_SEARCH_INDEX_MODE, or existing.",
+        )
+        command.add_argument(
+            "--index-name", help="Override AZURE_AI_SEARCH_INDEX_NAME for this command."
+        )
     commands.add_parser("list", help="List all agents in the configured project.")
     render = commands.add_parser(
         "render",
         help="Write the Foundry REST creation body without creating an agent.",
     )
     render.add_argument("--output", required=True)
+    render.add_argument(
+        "--index-name", help="Override the index name without Azure access."
+    )
     invoke = commands.add_parser("invoke", help="Invoke the RAG Agent.")
     invoke.add_argument("--message", required=True)
     return parser
@@ -183,7 +208,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     arguments = parser.parse_args(argv)
     try:
-        settings = Settings.from_environment()
+        settings = Settings.from_environment(
+            index_name=getattr(arguments, "index_name", None)
+        )
+        index_options = (
+            IndexOptions.from_environment(arguments.index_mode)
+            if arguments.command in ("create", "prepare-index")
+            else None
+        )
     except ValueError as error:
         parser.error(str(error))
 
@@ -205,6 +237,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         allow_preview=True,
     )
     try:
+        if index_options is not None:
+            prepared = prepare_index(
+                client,
+                credential,
+                settings.search_connection_id,
+                settings.search_index_name,
+                index_options,
+            )
+            if arguments.command == "prepare-index":
+                print(json.dumps(prepared, indent=2))
+                return 0
         if arguments.command == "create":
             print(json.dumps(create_agent(client, settings), indent=2, default=str))
         elif arguments.command == "list":
@@ -212,6 +255,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(agents, indent=2, default=str))
         else:
             print(invoke_agent(client, settings, arguments.message))
+    except ValueError as error:
+        parser.error(str(error))
     finally:
         client.close()
     return 0

@@ -64,7 +64,7 @@ include exact resources, principals, scopes, owners and conditional requirements
 |---|---|---|
 | Foundry V2 | `AIServices` account with project management enabled; experimentation/governed projects and MIs; approved model deployment/quota | Platform/AI |
 | Observability | Both Log Analytics workspaces, workspace-based Insights components, project connections, tracing and approved monitoring access | Platform/operations |
-| RAG | Search service, populated index, project connection, ingestion and approved retrieval-principal access | Data/platform |
+| RAG | Search service, project connection and approved retrieval-principal access; reuse a populated index by default, or explicitly create a synthetic PoC index using the [RAG index options](./02-governed-agents/02-rag-agent/README.md#choose-an-existing-index-or-create-a-synthetic-index) and pre-approved setup/embedding permissions | Data/platform |
 | Audio API | OpenAI-compatible audio endpoint, separate TTS/transcription deployments, runtime model permissions and approved audio-data policy; no separate Speech resource | Platform/AI |
 | MAF | Existing Linux Python 3.12 App Service/plan, MI and app settings; Easy Auth optional for controlled PoC, with approved network restrictions if omitted | Platform/identity |
 | Resource providers | CognitiveServices, Insights, OperationalInsights, Authorization; Search/Web for selected capabilities; conditional providers listed in the full matrix | Platform |
@@ -202,6 +202,8 @@ produces a new immutable version. Run it manually and select:
 | `provisionInfrastructure` | `false` | Author/test helper only; keep false for customer pre-existing infrastructure |
 | `createPromptAgent` | `true` | Create a new `PROMPT_AGENT_NAME` version |
 | `createRagAgent` | `false` | Create a new `RAG_AGENT_NAME` version |
+| `ragIndexMode` | `existing` | Reference a supplied index unchanged, or explicitly select `create` to create and seed a synthetic PoC index |
+| `ragIndexName` | `$(AZURE_AI_SEARCH_INDEX_NAME)` | Supplied or new index name; defaults to the approved environment variable group |
 | `enableAgent365Foundry` | `false` | Test/platform change stage; keep false when customer platform has configured collection |
 | `linuxPoolName` | `Microsoft-hosted` | Linux self-hosted pool, or hosted Ubuntu by default |
 | `windowsPoolName` | `Microsoft-hosted` | Windows self-hosted pool, or hosted Windows by default |

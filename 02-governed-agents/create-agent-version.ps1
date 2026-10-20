@@ -6,11 +6,19 @@ param(
 
     [Parameter(Mandatory)]
     [ValidateSet("AzCli", "Azd")]
-    [string] $Method
+    [string] $Method,
+
+    [ValidateSet("existing", "create")]
+    [string] $SearchIndexMode,
+
+    [string] $SearchIndexName
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
+if ($Agent -eq "prompt" -and ($SearchIndexMode -or $SearchIndexName)) {
+    throw "SearchIndexMode and SearchIndexName apply only to the RAG Agent."
+}
 $configuration = if ($Agent -eq "prompt") {
     @{
         Folder = Join-Path $root "01-prompt-agent"
@@ -64,7 +72,11 @@ $bodyPath = Join-Path ([System.IO.Path]::GetTempPath()) "$Agent-agent-$([guid]::
 try {
     Push-Location $configuration.Folder
     try {
-        & python $configuration.Script render --output $bodyPath
+        $renderArguments = @($configuration.Script, "render", "--output", $bodyPath)
+        if ($SearchIndexName) {
+            $renderArguments += @("--index-name", $SearchIndexName)
+        }
+        & python @renderArguments
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to render the $Agent Agent definition."
         }
@@ -77,6 +89,25 @@ try {
             "$projectEndpoint/agents/$agentName",
             "Create $Agent Agent version with $Method"
         )) {
+        if ($Agent -eq "rag") {
+            $prepareArguments = @($configuration.Script, "prepare-index")
+            if ($SearchIndexMode) {
+                $prepareArguments += @("--index-mode", $SearchIndexMode)
+            }
+            if ($SearchIndexName) {
+                $prepareArguments += @("--index-name", $SearchIndexName)
+            }
+            Push-Location $configuration.Folder
+            try {
+                & python @prepareArguments | Out-Host
+                if ($LASTEXITCODE -ne 0) {
+                    throw "RAG index preparation failed; no agent version was created."
+                }
+            }
+            finally {
+                Pop-Location
+            }
+        }
         if ($Method -eq "AzCli") {
             $tokenOutput = & az account get-access-token `
                 --resource "https://ai.azure.com" `

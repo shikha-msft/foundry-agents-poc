@@ -12,7 +12,11 @@ Use an approved Azure AI Search index with:
 
 - Searchable and retrievable content fields.
 - A retrievable title/source field.
-- A retrievable URL or document identifier for citations.
+- A searchable and retrievable `url` field for the native tool's default
+  source projection, plus a document identifier. A non-searchable URL field
+  can be omitted from the tool's projection, producing a Search-service URL
+  citation instead of the document URL. Existing mode never fixes schemas;
+  have the platform/data owner validate source citations before release.
 - Vector search when semantic retrieval is required.
 - Semantic configuration for vector-semantic hybrid retrieval.
 - A separate ingestion identity and pipeline.
@@ -37,6 +41,7 @@ All RAG Agent code and configuration are contained in this folder:
 | File | Purpose |
 |---|---|
 | `rag_agent.py` | Create, list, and invoke the Azure AI Search RAG Agent |
+| `search_index.py` | Reuse a supplied index, or create and seed a synthetic vector/semantic index |
 | `instructions.md` | Governed retrieval instructions |
 | `.env` | Local POC configuration; excluded by `.gitignore` |
 | `.env.sample` | Customer-safe template containing every variable |
@@ -50,14 +55,63 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.sample .env
-# Populate .env, including AZURE_AI_SEARCH_INDEX_NAME, before continuing.
+# Populate .env before continuing; choose an index option below.
 az login
-python rag_agent.py create
+python rag_agent.py create --index-mode existing --index-name approved-index-name
 ```
 
 The script loads `.env` from this folder, validates every required setting, and
 creates a new version of the agent named by `AGENT_NAME`. It fails explicitly
 when the Search connection or index is not configured.
+
+### Choose an existing index or create a synthetic index
+
+| Mode | Local command | Behavior |
+|---|---|---|
+| `existing` (default) | `python rag_agent.py create --index-mode existing --index-name approved-index` | References the supplied index unchanged. No schema lookup, index creation, embeddings, or document uploads; the platform/data owner must have validated the index and runtime permissions |
+| `create` (explicit opt-in) | `python rag_agent.py create --index-mode create --index-name new-synthetic-index` | Creates a new vector/semantic index, embeds and uploads three fictitious Aurora Demo policies, then creates the RAG Agent version |
+
+Alternatively set `AZURE_AI_SEARCH_INDEX_MODE=existing` or `create`, and
+`AZURE_AI_SEARCH_INDEX_NAME` in this folder's `.env`. CLI flags take precedence
+for that invocation; they do not rewrite `.env`. For subsequent `invoke`, keep
+the intended index name in `.env`, although invocation routes to the saved
+agent definition rather than rebuilding its tools.
+
+Create mode requires **pre-existing** resources and permissions:
+
+| Prerequisite | Required for synthetic creation |
+|---|---|
+| Search service and project connection | The full configured connection ID belongs to this project and targets the approved Search service. Entra/RBAC authentication and network access must already work |
+| Embedding deployment | An approved `text-embedding-3-small` deployment, producing 1536-dimensional vectors |
+| Embedding settings | `AZURE_AI_EMBEDDING_ENDPOINT=https://<account>.openai.azure.com/openai/v1/` and `AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=<deployment-name>`; use the resource endpoint, not the project endpoint |
+| Setup principal | Connection read access in Foundry, **Search Service Contributor** to create the index, **Search Index Data Contributor** to load documents, and **Cognitive Services OpenAI User** (or verified equivalent) on the embedding account |
+| Query vectorizer identity | The Search service's system-assigned MI must already be enabled and authorized to call the embedding deployment |
+| Semantic ranking | Already enabled on the Search service when using `semantic` or `vector_semantic_hybrid`; this helper does not enable a pricing tier |
+| Runtime retrieval identity | Separately approved and verified. Native Search tool setup can require **Search Service Contributor** and **Search Index Data Contributor**, beyond query-only Reader; do not assume per-agent identity enforcement |
+
+The command never provisions a Search service, model, connection, managed
+identity, role assignment, authentication setting or network rule. Customer
+IaC/platform teams own those prerequisites.
+
+Existing names are rejected in create mode: **no existing index or documents
+are overwritten or deleted**. If index creation succeeds but embeddings or
+document loading fails, the command fails, does not create an agent version,
+and leaves the new index for inspection. Do not switch to existing mode until
+the data owner has verified/completed ingestion. On later successful
+deployments, select `existing` to reuse the index.
+
+To prepare the index without creating another immutable agent version:
+
+```powershell
+python rag_agent.py prepare-index --index-mode create --index-name new-synthetic-index
+python rag_agent.py create --index-mode existing --index-name new-synthetic-index
+```
+
+Synthetic creation can incur embedding, Search storage and semantic-query
+charges. The fictitious documents cover onboarding (7 calendar days), support
+(4 business hours), and retention (30 calendar days). Their `example.org`
+citation URLs are synthetic source identifiers, not hosted policy pages.
+Successful uploads can take a short time to become searchable.
 
 List or invoke the agent:
 
@@ -76,12 +130,17 @@ Run the parent [`azure-pipelines.yml`](../../azure-pipelines.yml) with:
 
 - `createPromptAgent`: select as required
 - `createRagAgent: true`
-- `AZURE_AI_SEARCH_INDEX_NAME` in the approved variable group: the approved
-  Azure AI Search index
+- `ragIndexMode: existing` (default) or `create` (synthetic opt-in).
+- `ragIndexName`: the supplied or new index name. Its default resolves
+  `AZURE_AI_SEARCH_INDEX_NAME` from the approved variable group.
+- For `create`, set `AZURE_AI_EMBEDDING_ENDPOINT` and
+  `AZURE_AI_EMBEDDING_DEPLOYMENT_NAME` in that variable group and grant the
+  service connection's principal the approved setup/ingestion roles above.
 - `ADO_AGENT_SERVICE_CONNECTION` in the approved variable group: the
   workload-federated connection
 
-The pipeline validates the RAG definition, creates a new version, and
+The pipeline runs offline index-mode tests, validates the RAG definition,
+prepares the index in the selected mode, creates a new version, and
 publishes the creation response as a pipeline artifact. Resolve the agent-level
 identity and the Search connection's authentication principal before assigning
 **Search Index Data Reader**. The artifact can contain a version response
@@ -96,6 +155,10 @@ the parent `02-governed-agents` folder:
 # Azure CLI data-plane REST
 .\create-agent-version.ps1 -Agent rag -Method AzCli
 
+# Opt-in synthetic index setup, using the embedding settings in the RAG .env
+.\create-agent-version.ps1 -Agent rag -Method AzCli `
+  -SearchIndexMode create -SearchIndexName new-synthetic-index
+
 # Azure Developer CLI authentication plus data-plane REST
 .\create-agent-version.ps1 -Agent rag -Method Azd
 ```
@@ -103,6 +166,20 @@ the parent `02-governed-agents` folder:
 Both commands render the definition from `rag_agent.py`, so the SDK, Azure
 CLI, `azd`, and pipeline paths create the same Azure AI Search configuration.
 Add `-WhatIf` to validate without creating a version.
+`-WhatIf` and Python `render` also never create an index or upload documents.
+For index creation, the helper uses the same SDK credential selection as
+`rag_agent.py` (workload identity, managed identity, or Azure CLI), even when
+`-Method Azd` supplies the later Foundry REST token; an azd-only login is not
+sufficient for synthetic ingestion.
+
+### Offline validation
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest
+python -m ruff check rag_agent.py search_index.py tests
+python -m ruff format --check rag_agent.py search_index.py tests
+```
 
 ## Create the agent
 
