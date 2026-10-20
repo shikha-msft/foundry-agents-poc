@@ -16,6 +16,13 @@ For inventory and telemetry onboarding, read the
 [Agent 365 guide](../agent-365/README.md). For end-to-end deployment, start with
 the [customer runbook](../CUSTOMER-HANDOVER.md).
 
+Customer platform/identity teams must supply the resources, grants, custom
+blueprint/agent registration and federation in the
+[customer prerequisite tables](../CUSTOMER-PREREQUISITES.md). The PowerShell
+helpers described here are for the author's test environment. Foundry-managed
+blueprints/identities are an exception to pre-creation: Foundry manages them
+when application agents are created; do not pre-create duplicates.
+
 ## 2. The identity objects
 
 ```text
@@ -68,26 +75,37 @@ Human/ADO deployment identity -> creates resources and agent definitions
 App Service MI               -> calls Foundry agents/models
 Verified RAG tool principal  -> queries Search
 App Service MI               -> blueprint trust -> Agent ID -> Agent 365 export
-Authenticated caller         -> Easy Auth -> invokes the MAF API
+PoC caller                   -> approved network -> MAF API (Easy Auth optional)
 ```
 
 The current MAF application does **not** exchange the caller's token for
 per-user downstream access. Its Agent ID exchange is S2S and currently used
 for Agent 365 telemetry. Foundry inference uses the workload/managed/CLI
 credential selected by
-[authentication.py](../02-governed-agents/03-maf-multi-agent/app/authentication.py).
+[authentication.py](../02-governed-agents/04-maf-multi-agent/app/authentication.py).
 
-Easy Auth caller authentication does not automatically provide per-user Search
-document authorization. The PoC does not implement user-level retrieval filters.
+Easy Auth is not required for the controlled PoC. If omitted, use an empty
+`ENTRA_CLIENT_ID`, `REQUIRE_APP_SERVICE_AUTH=false` and approved network
+restrictions; do not publicly expose an unauthenticated endpoint. This does not
+remove MI/Agent ID service authentication or resource grants.
+If enabled, Easy Auth caller authentication still does not automatically provide
+per-user Search authorization. The PoC does not implement user-level retrieval filters.
 
 ## 5. Foundry-managed identities: new versus legacy
 
 ### Prerequisites
 
-- **Microsoft Foundry V2** resource/projects, not classic hub-based projects.
-- Approved model deployment, working project endpoint and tenant Agent ID support.
-- Foundry developer data-plane permissions and approved identity lifecycle policy.
-- Approved data owner and role-assignment administrator for downstream grants.
+| Area | Required prerequisite/owner |
+|---|---|
+| Foundry V2 | Existing resource/projects/MIs, not classic hubs; platform team |
+| Models/monitoring | Approved model deployment, working endpoint, Insights/workspace connections; platform team |
+| Developer access | Pre-assigned Foundry project data-plane role; platform access owner |
+| Tenant Agent ID | Feature/API availability, permitted identity lifecycle, owners/sponsors; identity team |
+| Downstream access | Approved data owner, actual runtime principal and scoped grants; data/platform teams |
+| Custom MAF identity | Blueprint, Blueprint Principal, agent identity, supported provisioning client/consent and MI FIC; identity team |
+
+See the [complete Entra Agent ID prerequisites](../CUSTOMER-PREREQUISITES.md#5-entra-agent-id-prerequisites)
+for operation-specific Graph permission candidates and ID handover requirements.
 
 The [migration guide](https://learn.microsoft.com/azure/foundry/agents/how-to/migrate-agent-applications)
 distinguishes:
@@ -188,6 +206,10 @@ using Azure CLI credentials to call the Foundry data plane.
 
 ## 7. Custom App Service blueprint provisioning
 
+For customers, the identity team supplies this state through its approved
+process before application onboarding. The sequence below explains the
+author/test helper; it is not a requirement to run it on customer resources.
+
 The [Agent 365 provisioning script](../provision-agent365.ps1) uses the CLI for
 custom coordinator setup:
 
@@ -229,7 +251,7 @@ agent creation. Leave Foundry-managed identity lifecycle to Foundry.
 
 ## 8. App Service runtime token exchange
 
-Implemented in [Agent365TokenResolver](../02-governed-agents/03-maf-multi-agent/app/agent365.py).
+Implemented in [Agent365TokenResolver](../02-governed-agents/04-maf-multi-agent/app/agent365.py).
 Credentials/trust belong to the blueprint; the agent identity does not hold
 its own password/certificate.
 

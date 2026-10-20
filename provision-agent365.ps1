@@ -13,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$mafPath = Join-Path $PSScriptRoot "02-governed-agents\03-maf-multi-agent"
+$mafPath = Join-Path $PSScriptRoot "02-governed-agents\04-maf-multi-agent"
 $generatedConfigPath = Join-Path $mafPath "a365.generated.config.json"
 $outputPath = Join-Path $PSScriptRoot "agent365-provisioning-output.json"
 

@@ -14,6 +14,7 @@ param(
     [string] $RagAgentName,
     [string] $ApplicationInsightsName,
     [string] $EntraClientId,
+    [switch] $EnableEasyAuth,
     [switch] $SkipPackageDeploy,
     [switch] $SkipRoleAssignment
 )
@@ -87,7 +88,16 @@ $ModelDeploymentName = Resolve-Setting $ModelDeploymentName "MODEL_DEPLOYMENT_NA
 $PromptAgentName = Resolve-Setting $PromptAgentName "PROMPT_AGENT_NAME"
 $RagAgentName = Resolve-Setting $RagAgentName "RAG_AGENT_NAME"
 $ApplicationInsightsName = Resolve-Setting $ApplicationInsightsName "GOVERNED_APPLICATION_INSIGHTS_NAME"
-$EntraClientId = Resolve-Setting $EntraClientId "ENTRA_CLIENT_ID" -AllowEmpty
+if ($EnableEasyAuth) {
+    $EntraClientId = Resolve-Setting $EntraClientId "ENTRA_CLIENT_ID"
+    $parsedClientId = [guid]::Empty
+    if (-not [guid]::TryParse($EntraClientId, [ref]$parsedClientId) -or $parsedClientId -eq [guid]::Empty) {
+        throw "EnableEasyAuth requires ENTRA_CLIENT_ID or EntraClientId to be a non-empty application client GUID."
+    }
+}
+else {
+    Write-Warning "Easy Auth is disabled for this PoC deployment, including any existing App Service authentication. Restrict access to approved networks; do not expose this endpoint publicly."
+}
 
 function Invoke-AzCli {
     param([Parameter(Mandatory)][string[]] $Arguments)
@@ -188,7 +198,7 @@ if ($PSCmdlet.ShouldProcess($WebAppName, "Enable system-assigned managed identit
     }
 }
 
-$requireAuth = if ($EntraClientId) { "true" } else { "false" }
+$requireAuth = if ($EnableEasyAuth) { "true" } else { "false" }
 if ($PSCmdlet.ShouldProcess($WebAppName, "Configure application settings")) {
     Invoke-AzCli -Arguments @(
         "webapp", "config", "appsettings", "set",
@@ -222,7 +232,7 @@ if ($PSCmdlet.ShouldProcess($WebAppName, "Configure application settings")) {
     ) | Out-Null
 }
 
-if ($EntraClientId -and $PSCmdlet.ShouldProcess($WebAppName, "Enable Microsoft Entra authentication")) {
+if ($EnableEasyAuth -and $PSCmdlet.ShouldProcess($WebAppName, "Enable Microsoft Entra authentication")) {
     Invoke-AzCli -Arguments @(
         "webapp", "auth", "update",
         "--name", $WebAppName,
@@ -231,6 +241,15 @@ if ($EntraClientId -and $PSCmdlet.ShouldProcess($WebAppName, "Enable Microsoft E
         "--action", "LoginWithAzureActiveDirectory",
         "--aad-client-id", $EntraClientId,
         "--aad-token-issuer-url", "https://sts.windows.net/$TenantId/",
+        "--output", "none"
+    ) | Out-Null
+}
+elseif (-not $EnableEasyAuth -and $PSCmdlet.ShouldProcess($WebAppName, "Disable Easy Auth for controlled PoC")) {
+    Invoke-AzCli -Arguments @(
+        "webapp", "auth", "update",
+        "--name", $WebAppName,
+        "--resource-group", $ResourceGroupName,
+        "--enabled", "false",
         "--output", "none"
     ) | Out-Null
 }
@@ -274,7 +293,7 @@ if ($WhatIfPreference) {
         planned = $true
         promptAgentName = $PromptAgentName
         ragAgentName = $RagAgentName
-        entraAuthenticationEnabled = [bool]$EntraClientId
+        entraAuthenticationEnabled = [bool]$EnableEasyAuth
     } | ConvertTo-Json
     return
 }
@@ -294,5 +313,5 @@ $hostName = Invoke-AzCli -Arguments @(
     managedIdentityPrincipalId = $principalId
     promptAgentName = $PromptAgentName
     ragAgentName = $RagAgentName
-    entraAuthenticationEnabled = [bool]$EntraClientId
+    entraAuthenticationEnabled = [bool]$EnableEasyAuth
 } | ConvertTo-Json

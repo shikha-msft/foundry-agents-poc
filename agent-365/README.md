@@ -49,6 +49,7 @@ App Service MAF coordinator                         |
 | Code-created Prompt/RAG agents | Same built-in collection; RAG is a Prompt agent with retrieval | Same account-wide setting |
 | App Service MAF coordinator | Custom S2S registration and SDK export | One orchestrator registration |
 | In-process specialist wrappers | Included in coordinator execution; remote targets use Foundry integration | Not separate custom registrations in this code |
+| Direct-model TTS/STT HTTP sample | No Agent 365 exporter/registration wired in this sample | Not automatically covered by Foundry Prompt Agent collection or the MAF registration; mandatory integration remains a release gate |
 | Other hosting/agent types | Not established by these scripts | Assess supported integration separately |
 
 Foundry Hosted Agents are **not** required. App Service remains the coordinator
@@ -57,15 +58,21 @@ logging cannot be restricted to only the two new projects.
 
 ## 4. Prerequisites and responsible people
 
+For customer onboarding, infrastructure, registration, consent, federation and
+platform settings are supplied through customer IaC/platform/identity processes.
+The scripts described later are author/test helpers, not mandatory customer
+setup. Use the full [customer prerequisite tables](../CUSTOMER-PREREQUISITES.md).
+
 ### Platform prerequisites
 
-- **Microsoft Foundry V2**: existing Foundry `AIServices` resource with project
-  management enabled; classic hub-based projects are not supported by this kit.
-- Working Prompt/RAG agents and approved model deployment.
-- For MAF: deployed App Service, system-assigned managed identity, configured
-  Easy Auth and working access to the remote Foundry agents.
-- Azure CLI and PowerShell 7; for MAF registration also .NET 8 and a
-  customer-approved Agent 365 CLI version.
+| Area | Existing prerequisite |
+|---|---|
+| Foundry V2 | `AIServices` resource, both projects/MIs, approved model, monitoring/connections; no classic hub-based projects |
+| Agent applications | Working Prompt/RAG definitions before delivery tests |
+| MAF host | App Service/plan, MI, app settings and remote Foundry access; Easy Auth optional for controlled PoC with approved network restrictions |
+| Custom identity | Blueprint, Blueprint Principal, agent identity, resource grants and MI trust |
+| Providers/RBAC/network | Applicable rows in the complete customer matrix, pre-established by platform owners |
+| Administrator tooling | Azure CLI/PowerShell and approved .NET/Agent 365 CLI only if used by platform setup; not a universal developer-machine requirement |
 
 ### Tenant and governance prerequisites
 
@@ -104,12 +111,16 @@ Do not use an administrator's cached session to make an unattended job appear
 functional.
 
 The root script reads the root `.env`. Local MAF execution reads its own
-[configuration template](../02-governed-agents/03-maf-multi-agent/.env.sample).
-App Service runtime settings are configured by deployment/provisioning scripts.
+[configuration template](../02-governed-agents/04-maf-multi-agent/.env.sample).
+For customers, App Service runtime settings are supplied through the platform's
+approved configuration process; the test helpers can configure them in the
+author's environment.
 
 ## 6. Enable Foundry built-in collection
 
-Run from the PoC checkout root after shared-account approval:
+**Customer prerequisite:** the platform team has already enabled collection
+with shared-account approval. Use the read check below to verify state.
+For the author's test environment only, the helper commands are:
 
 ```powershell
 .\provision-agent365.ps1 -Scope Foundry -WhatIf
@@ -142,6 +153,12 @@ Expected configuration: `loggingEnabled: true`, `status: "Enabled"`.
 Verify the preview API remains supported in the customer's environment.
 
 ## 7. Register the App Service coordinator
+
+**Customer prerequisite:** identity/platform teams provide the existing
+registration, grants and federation described in the
+[Agent 365 matrix](../CUSTOMER-PREREQUISITES.md#6-agent-365-prerequisites).
+Do not run the helper over those objects simply to onboard application code.
+The following explains administrator/test-helper behavior.
 
 Use an approved administrator workstation for initial onboarding.
 If the CLI is not installed, install the customer-approved version of
@@ -184,8 +201,8 @@ it is not an atomic transaction.
 ## 8. Runtime settings and telemetry
 
 The implementation is in
-[app/agent365.py](../02-governed-agents/03-maf-multi-agent/app/agent365.py) and
-[app/configuration.py](../02-governed-agents/03-maf-multi-agent/app/configuration.py).
+[app/agent365.py](../02-governed-agents/04-maf-multi-agent/app/agent365.py) and
+[app/configuration.py](../02-governed-agents/04-maf-multi-agent/app/configuration.py).
 
 | Setting | Meaning |
 |---|---|
@@ -210,8 +227,13 @@ does not prove delivery to the other.
 
 ## 9. ADO and self-hosted execution
 
+For normal customer onboarding keep platform mutation flags disabled and
+consume existing configuration. The supplied MAF YAML remains a combined
+provisioning/deployment test reference; customers need their own package-only
+delivery process.
+
 The [main pipeline](../azure-pipelines.yml) uses `enableAgent365Foundry` for
-account collection. The [MAF pipeline](../02-governed-agents/03-maf-multi-agent/azure-pipelines.yml)
+account collection. The [MAF pipeline](../02-governed-agents/04-maf-multi-agent/azure-pipelines.yml)
 uses `provisionAgent365` for custom registration. Both flags default false.
 
 Use `ADO_AGENT365_SERVICE_CONNECTION` and the approval-protected

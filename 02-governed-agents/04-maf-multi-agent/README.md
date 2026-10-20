@@ -1,4 +1,4 @@
-# 03 - Microsoft Agent Framework Multi-Agent
+# 04 - Microsoft Agent Framework Multi-Agent
 
 This folder contains a governed multi-agent API built with **Microsoft Agent
 Framework (MAF)** and hosted on **Azure App Service for Linux**.
@@ -14,7 +14,7 @@ customer authentication/consent tests in that runbook.
 Authenticated caller
         |
         v
-Azure App Service + Easy Auth
+Azure App Service (Easy Auth optional for controlled PoC)
         |
         v
 MAF Magentic workflow
@@ -73,31 +73,48 @@ Autonomy is bounded by:
 
 ## Prerequisites
 
-1. The Foundry project and `MODEL_DEPLOYMENT_NAME` deployment exist.
-2. `PROMPT_AGENT_NAME` exists and is active.
-3. `RAG_AGENT_NAME` exists and its verified retrieval principal has **Search
-   Index Data Reader** on the approved supported Search scope.
-4. The App Service managed identity has **Foundry User** on the Foundry
-   account or the narrower supported project scope.
-5. `GOVERNED_APPLICATION_INSIGHTS_NAME` exists.
-6. For authenticated production access, an Entra application registration is
-   approved for App Service Easy Auth.
-7. For Agent 365, the tenant has an active license and completed consent, and
-   the provisioning administrator has the required Agent ID roles plus
-   `AgentIdentityBlueprint.AddRemoveCreds.All` to federate the App Service
-   managed identity with the MAF Agent Identity blueprint.
+All infrastructure and platform grants must already be supplied by customer
+IaC/the platform team. Complete the
+[customer prerequisite tables](../../CUSTOMER-PREREQUISITES.md), including:
+
+| Area | Required existing state |
+|---|---|
+| Foundry V2 | Governed project/endpoint, approved model deployment and project monitoring |
+| Remote agents | Active Prompt/RAG definitions; RAG tool principal verified with approved Search reader access |
+| Host | Linux Python 3.12 web app/plan, system-assigned MI, startup/build/health configuration |
+| PoC access | Easy Auth not required; if omitted, empty `ENTRA_CLIENT_ID`, `REQUIRE_APP_SERVICE_AUTH=false`, and approved network restrictions |
+| Runtime RBAC | App Service MI Foundry access; separate actual retrieval-principal Search access |
+| Agent ID | Platform-approved custom blueprint, Blueprint Principal, agent identity, grants and MI federation |
+| Agent 365 | Licensing, tenant consent, orchestrator registration, exporter settings and delivery evidence |
+| Operations | Network/DNS/feed access, monitoring configuration, redaction and scoped package-deployment permissions |
+
+For a controlled PoC, Easy Auth and its app registration are optional. Without
+it, use the settings below and verify platform Authentication is not still
+requiring login:
+
+```dotenv
+ENTRA_CLIENT_ID=
+REQUIRE_APP_SERVICE_AUTH=false
+```
+
+These are explicit PoC overrides; templates/code retain authentication-enabled
+defaults for direct application startup. The test deployment helper/pipeline
+now explicitly defaults Easy Auth **off** and sets both platform authentication
+and the application check to match. Restrict the endpoint to approved networks; do not publicly expose an
+unauthenticated API. Production must use authentication. App Service MI,
+Agent ID and Agent 365 service authentication remain separate and unchanged.
 
 ## Run locally
 
 From the PoC checkout root:
 
 ```powershell
-cd .\02-governed-agents\03-maf-multi-agent
+cd .\02-governed-agents\04-maf-multi-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 Copy-Item .env.sample .env
-# Populate .env; set REQUIRE_APP_SERVICE_AUTH=false for local development only.
+# Populate .env; set REQUIRE_APP_SERVICE_AUTH=false for local/controlled PoC use.
 az login
 python -m uvicorn app.main:app --reload --port 8000
 ```
@@ -122,13 +139,38 @@ Endpoints:
 - `GET /readyz` - MAF runtime readiness.
 - `POST /api/chat` - authenticated multi-agent execution.
 
-## Deploy to Azure App Service
+## Customer application delivery
 
-Set `WEB_APP_NAME` and `ENTRA_CLIENT_ID` in the ignored `.env`, then run:
+Use the customer's approved package-only delivery pipeline to the existing web
+app. Platform teams own the infrastructure, identities, role assignments, Easy
+Auth and runtime configuration. Application developers do not need resource-
+group Contributor or role-assignment authority for routine code delivery.
+
+**The bundled MAF pipeline is not package-only:** it calls the combined helper
+below, even when `provisionAgent365=false`. Do not use it unchanged for customer
+code delivery or grant infrastructure privileges just to make it run.
+
+## Test environment only: deploy to Azure App Service
+
+The following helper is retained for the author's own test environment, not
+customer infrastructure setup.
+
+Set `WEB_APP_NAME` and the remaining required test settings in the ignored
+`.env`. Easy Auth is an optional feature, **off by default**:
 
 ```powershell
+# Controlled PoC: disables platform Easy Auth and the application auth check.
 .\deploy.ps1
+
+# Opt in: requires an approved non-empty application client GUID.
+.\deploy.ps1 -EnableEasyAuth -EntraClientId "<application-client-guid>"
 ```
+
+The opt-in can also read `ENTRA_CLIENT_ID` from configuration. Supplying a
+client ID alone no longer enables the feature. Enabling it with a missing,
+placeholder or invalid client ID fails before Azure changes.
+**Default/off deployment explicitly disables existing platform Easy Auth**;
+do not run this PoC helper over an authenticated production app.
 
 The script:
 
@@ -136,7 +178,7 @@ The script:
 2. Enables a system-assigned managed identity.
 3. Assigns **Foundry User** to that identity.
 4. Configures the existing POC Foundry agents and Application Insights.
-5. Enables Easy Auth when `EntraClientId` is supplied.
+5. Enables Easy Auth only with `-EnableEasyAuth`; otherwise explicitly disables it.
 6. Packages only the application, startup command, and runtime requirements.
 7. Deploys through App Service ZIP deployment with Oryx build enabled.
 
@@ -146,11 +188,22 @@ For an infrastructure-only preview:
 .\deploy.ps1 -WhatIf
 ```
 
-Do not deploy production without `EntraClientId`. When it is omitted,
-`REQUIRE_APP_SERVICE_AUTH` is set to `false` to support local/controlled POC
-testing and the endpoint is not suitable for public production use.
+Use the optional feature only within the intended access model. Off mode sets
+`REQUIRE_APP_SERVICE_AUTH=false` for controlled PoC testing and is unsuitable
+for public production use. Production must retain authentication.
+
+Run isolated deployment tests (no Azure access or real dotenv files used):
+
+```powershell
+.\tests\test_deployment.ps1
+```
 
 ## Register with Microsoft Agent 365
+
+For customer onboarding, registration, consent, federation and export settings
+are existing platform/identity prerequisites. The commands below document the
+author/test helper; customers consume approved IDs/settings and verify delivery
+rather than rerunning setup.
 
 The MAF application is registered once as an S2S orchestrator. The Prompt and
 Retrieval specialists are not separate Agent 365 registrations because they
@@ -193,7 +246,10 @@ each receive a separate Agent 365 registration.
 
 ## Deploy through Azure DevOps
 
-Create a pipeline from `03-maf-multi-agent/azure-pipelines.yml`.
+The bundled `04-maf-multi-agent/azure-pipelines.yml` is an **author/test combined
+provisioning/deployment reference**. Customers use their existing package-only
+application pipeline. The permissions below apply to this helper's infrastructure
+mutations, not a blanket customer application permission request.
 
 Pipeline configuration is read from the
 `foundry-agents-poc-environment` Azure DevOps variable group:
@@ -202,9 +258,15 @@ Pipeline configuration is read from the
 |---|---|
 | `ADO_APP_SERVICE_CONNECTION` | Workload-federated ARM service connection |
 | `WEB_APP_NAME` | Globally unique App Service name |
-| `ENTRA_CLIENT_ID` | Approved Easy Auth application ID |
+| `ENTRA_CLIENT_ID` | Optional for controlled PoC; leave empty when Easy Auth is omitted |
 | `ADO_AGENT365_SERVICE_CONNECTION` | Connection used only by the approved Agent 365 stage |
 | `ADO_AGENT365_ENVIRONMENT_NAME` | Approval-protected Agent 365 environment |
+
+Queue-time parameter `enableEasyAuth` defaults to `false`. Set it to `true`
+only to opt into Easy Auth; then the pipeline requires `ENTRA_CLIENT_ID` in the
+variable group. Off mode does not require that variable and explicitly disables
+platform authentication and the application's auth check. This feature is
+independent of `provisionAgent365`.
 
 The service connection identity requires:
 

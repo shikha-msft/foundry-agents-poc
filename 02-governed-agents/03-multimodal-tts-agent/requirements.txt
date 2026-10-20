@@ -1,0 +1,6 @@
+azure-identity>=1.25.2,<2
+azure-monitor-opentelemetry>=1.8,<2
+fastapi>=0.118,<1
+openai>=2.26,<4
+python-dotenv>=1.1,<2
+uvicorn>=0.37,<1

@@ -1,8 +1,15 @@
 # Customer setup and handover runbook
 
-Start here when deploying this PoC into a new customer environment. Commands
+Start here when onboarding agents to an existing customer platform. Commands
 below use PowerShell 7 unless explicitly marked Bash. Replace placeholders;
 do not paste tenant-specific values or credentials into this repository.
+
+**Customer infrastructure is a prerequisite, supplied through customer IaC or
+the platform team.** Start with the
+[customer prerequisite tables](./CUSTOMER-PREREQUISITES.md). Provisioning
+PowerShell scripts are author/test-environment helpers, not the customer
+infrastructure setup path. Customer application teams should not need general
+resource creation, provider registration or RBAC-administration permissions.
 
 For detailed explanations alongside this ordered runbook:
 
@@ -14,10 +21,12 @@ For detailed explanations alongside this ordered runbook:
 ## 1. Scope and release gates
 
 This kit targets **Microsoft Foundry V2 resource/projects**, not classic
-hub-based projects. It references an existing Foundry account, creates two
-projects with monitoring, creates Prompt/RAG agents, and deploys an optional
-multi-agent coordinator to **App Service**. Foundry Hosted Agents are not
-required or deployed.
+hub-based projects. Customer platform teams supply the account, both projects,
+monitoring, Search and optional **App Service** host before application
+onboarding. The application team creates Prompt/RAG definitions and delivers
+the MAF application to the existing host. Foundry Hosted Agents are not
+required. Test helpers can create/update infrastructure, but are not the
+customer delivery process.
 
 Agent 365 is opt-in in the scripts. If the customer's architecture requires
 Agent 365 for every agent, its licensing, consent, registration, and telemetry
@@ -25,19 +34,25 @@ checks below are **release gates**, not optional acceptance criteria.
 
 | Capability | What this repository provides | Customer must still verify/provide |
 |---|---|---|
-| Observability | Project monitoring resources; MAF Azure Monitor/Agent 365 instrumentation | Trace ingestion, correlation, redaction, alerts and retention |
+| Observability | Test monitoring helper; MAF Azure Monitor/Agent 365 instrumentation | Pre-existing monitoring/connections, trace ingestion, correlation, redaction, alerts and retention |
 | Governance | Separate deployment identities, approval environments, instructions | Named owners, risk approval, access reviews and release evidence |
 | Responsible AI/content safety | Instructions and test checklists | Approved Foundry content filters/guardrails and measured safety evaluations |
 | Agent identity | Foundry-managed identity lifecycle; MAF Agent 365 setup/federation path | Actual identities, least-privilege grants and sign-in evidence |
 | RAG | Existing Search connection/index integration | Ingestion, index schema, data ownership and document access boundaries |
-| Multi-agent | App Service MAF coordinator calling remote Prompt/RAG agents | Easy Auth configuration and authorization testing |
+| Multi-agent | App Service MAF coordinator calling remote Prompt/RAG agents | Controlled PoC network boundary; Easy Auth optional for PoC, authentication required for production |
 
 The PoC does **not** integrate the separate sibling `agent-harness` package.
 It does not implement explicit application-level Content Safety/Prompt Shields
-checks, multimodal input, an MCP service, automated evaluation release gates,
+checks, audio input in the MAF coordinator, an MCP service, automated evaluation release gates,
 or per-caller RAG document filtering. Instructions and metadata are not
 enforcement. The MAF gateway invokes agents by name, not a pinned version;
 verify the resolved version after changes before release.
+
+The separate [03 TTS/STT HTTP API](./02-governed-agents/03-multimodal-tts-agent/README.md)
+provides file-based audio conversion against Foundry model deployments.
+It does not create a managed Foundry agent identity or include custom Agent 365
+export. Mandatory identity/export controls must be implemented and validated
+before releasing that sample under a policy requiring them.
 
 **Validation status:** this runbook is not evidence of a successful deployment
 in the customer's tenant. Complete section 10 in a clean customer environment.
@@ -50,7 +65,7 @@ successful Azure login or `-WhatIf`.
 | Persona | Responsibilities | Stop/approval boundary |
 |---|---|---|
 | Platform administrator | Existing account, model deployments, monitoring, network routes, Azure RBAC | Approve resource and role-assignment scopes |
-| Entra/Agent 365 administrator | Availability/licensing, consent, blueprint ownership, Graph access, Easy Auth app | Approve directory grants and shared-account logging impact |
+| Entra/Agent 365 administrator | Availability/licensing, consent, blueprint ownership, Graph access; Easy Auth app only if selected | Approve directory grants and shared-account logging impact |
 | Data/Search owner | Index/connection, synthetic dataset, retrieval principal, access tests | Approve data scope before real data is used |
 | ADO administrator | Pools, workload-federated service connections, variable group, protected environments | Authorize only the intended pipelines |
 | Agent developer | Definitions, local checks, agent creation, functional/safety tests | Cannot self-approve privileged grants or production release |
@@ -69,14 +84,17 @@ on a pipeline service principal.
 | Identity | Required Azure access | Directory/data access |
 |---|---|---|
 | Agent creation service connection | **Foundry User** on the governed project | No broad Graph permissions for Foundry-managed creation |
-| Infrastructure service connection | **Contributor** on the target resource group | **User Access Administrator** or approved RBAC administrator at every scope where the script assigns roles: parent Foundry account and new Insights components |
-| App Service deployment service connection | **Contributor** on the target resource group; role-assignment authority on the parent Foundry account | No Graph grants needed solely to deploy the web app |
-| Foundry Agent 365 service connection | Account read/write, e.g. **Contributor** at the account scope | Tenant licensing/consent completed separately |
-| MAF Agent 365 setup operator/client | Read App Service identity; update its app settings | Approved Agent ID/Graph setup and consent authority; see section 8 |
+| Platform IaC principal (or author/test infrastructure connection) | **Contributor** on owned resource scopes | Separately approved role-assignment authority where grants are managed; not an application-developer requirement |
+| Customer App Service package deployment principal | Scoped package-deployment rights on the existing web app, e.g. validated **Website Contributor** | No Graph/RBAC administration needed solely for application package delivery |
+| Platform Foundry Agent 365 operator | Account read/write, e.g. **Contributor** at the account scope | Tenant licensing/consent completed separately; not routine application authority |
+| Platform MAF Agent 365 setup operator/client | Read App Service identity; update its app settings | Approved Agent ID/Graph setup and consent authority; see section 8 |
 | App Service managed identity | **Foundry User** on the account (the deploy script assigns here) | Bootstrap for Agent 365 token exchange, not a directory administrator |
 | Actual RAG tool principal | **Search Index Data Reader** on the approved supported Search scope | Verify the identity actually used; no ingestion/write access by default |
 | Monitoring reviewers | **Log Analytics Reader** on the workspace plus approved Insights read access | No prompt/document payload access unless separately approved |
 
+The complete [RBAC matrix](./CUSTOMER-PREREQUISITES.md#3-azure-rbac-and-data-permissions)
+also inventories project MI monitoring grants, ingestion and conditional data
+permissions. Platform teams pre-assign these.
 For portal users also grant parent-account **Reader** as needed for navigation.
 Publication/endpoint management can require **Foundry Project Manager**; do not
 assume a creator is also an authorized publisher. If custom roles or conditional
@@ -90,12 +108,13 @@ RBAC delegation are used, validate the actions against the scripts.
 2. **Prerequisite: Microsoft Foundry V2.** Confirm an existing Microsoft
    Foundry resource (`AIServices` account) has Foundry project management
    enabled in the selected region. Classic hub-based Azure AI Foundry projects
-   are not supported. This kit creates projects under the existing resource;
-   it does not create or migrate the parent account. Before agent creation,
+   are not supported. Both projects and monitoring must already exist through
+   the platform team's IaC/process; do not use test scripts to recreate them.
+   Before agent creation,
    confirm the project endpoint uses
    `https://<account-name>.services.ai.azure.com/api/projects/<project-name>`.
-   Deploy an approved chat model with sufficient quota. This kit does not
-   create the model or the Search ingestion pipeline.
+   Confirm the platform has supplied an approved chat model with sufficient
+   quota and the Search ingestion pipeline when using RAG.
 3. Confirm providers are registered: `Microsoft.CognitiveServices`,
    `Microsoft.Insights`, `Microsoft.OperationalInsights`,
    `Microsoft.Authorization`, and `Microsoft.Web` for App Service. A subscription
@@ -133,24 +152,20 @@ RBAC delegation are used, validate the actions against the scripts.
 resources have been deployed. Local environment variables override root dotenv
 values, so clear stale values before switching customer environments.
 
-## 5. Provision projects, then create agents
+## 5. Verify platform prerequisites, then create agents
 
-### 5.1 Projects and monitoring - platform administrator
+### 5.1 Existing projects and monitoring - platform handover
 
-From the checkout root:
+Obtain platform outputs and complete the
+[resource/provider/RBAC tables](./CUSTOMER-PREREQUISITES.md). Confirm both
+projects, their MIs, monitoring resources/connections and approved assignments
+exist and are healthy. Record their actual resource/principal IDs and current
+read evidence. An old test `deployment-output.json` is not proof of customer
+readiness. If something is missing, raise it with the platform owner rather
+than running `deploy.ps1` over customer-managed resources.
 
-```powershell
-.\deploy.ps1 -WhatIf
-.\deploy.ps1
-```
-
-Preview still needs authenticated read access; it is not an offline test.
-Review the planned scopes before the second command. Expect two projects,
-two Log Analytics workspaces, two Application Insights components, project
-connections and the role assignments documented in the
-[main README](./README.md). Store the generated `deployment-output.json` in
-restricted handover evidence. Confirm resources and connections in Azure;
-an output file alone does not prove current health.
+The root `deploy.ps1` remains available for the author's disposable test
+environment only; it is not a customer prerequisite validation-only tool.
 
 ### 5.2 Prompt and RAG - developer and data owner
 
@@ -210,27 +225,57 @@ connection using a different identity/key does not establish per-agent access.
 If the customer requires distinct identity for every agent, shared legacy
 identity is a release blocker.
 
-## 6. Deploy the App Service coordinator
+### 5.4 Optional audio API onboarding
 
-1. Follow the [MAF guide](./02-governed-agents/03-maf-multi-agent/README.md).
+The platform team supplies separate TTS/transcription deployments, an
+OpenAI-compatible resource `/openai/v1/` endpoint and model data-plane RBAC.
+Follow the [audio sample](./02-governed-agents/03-multimodal-tts-agent/README.md)
+to configure/run the HTTP API and test playable synthesis plus accurate
+transcription. It is independent of MAF; the existing Agent 365 registration
+does not automatically cover it. Use the customer-owned delivery process if
+hosting this API remotely.
+
+## 6. Deliver the coordinator to the existing App Service
+
+1. Follow the [MAF guide](./02-governed-agents/04-maf-multi-agent/README.md).
    Configure its local template before starting the API.
-2. Have the Entra administrator create/approve the Easy Auth app registration,
-   tenant, supported audiences and caller access policy. Configure the web
-   redirect URI, if browser sign-in is used:
+2. **Easy Auth is optional for the controlled PoC.** If omitted, leave
+   `ENTRA_CLIENT_ID` empty, set `REQUIRE_APP_SERVICE_AUTH=false`, and confirm
+   approved network restrictions prevent public unauthenticated access.
+   Platform teams must verify App Service Authentication is not still enforcing
+   login; application settings alone do not disable it.
+   If Easy Auth is selected, confirm the app registration, tenant, audiences,
+   caller policy and the web redirect URI if browser sign-in is used:
    `https://<web-app-name>.azurewebsites.net/.auth/login/aad/callback`.
-3. Set `ENTRA_CLIENT_ID` and deploy from the MAF folder with `.\deploy.ps1`.
-   The deployment identity needs the permissions in section 3.
-4. Verify App Service Authentication is enabled, unauthenticated callers are
-   rejected/redirected, and the tenant/audience/caller restrictions match policy.
-   Production requires `REQUIRE_APP_SERVICE_AUTH=true`.
-5. Test using an approved authenticated client through the actual App Service
-   endpoint. Do not fake the `X-MS-CLIENT-PRINCIPAL-ID` header; the application
-   trusts Easy Auth to establish that boundary.
+3. Supply approved application configuration, including the chosen auth mode,
+   to the customer-owned application delivery process. Deploy the application
+   package to the existing web app using scoped package-deployment rights.
+   The bundled MAF `deploy.ps1` combines provisioning and code delivery;
+   it is an author/test helper, not a package-only customer deployment command.
+4. If Easy Auth is enabled, verify unauthenticated callers are rejected/redirected
+   and tenant/audience/caller restrictions match policy. If omitted for PoC,
+   test both permitted network access and denial from unapproved networks.
+   Production requires authentication and `REQUIRE_APP_SERVICE_AUTH=true`
+   with the current Easy Auth integration.
+5. Test the actual App Service endpoint using the selected mode. Do not fake
+   `X-MS-CLIENT-PRINCIPAL-ID` to simulate authentication; when enabled, the
+   application trusts Easy Auth to establish that boundary.
+
+Omitting Easy Auth does not remove managed identity, Entra Agent ID, Agent 365
+or downstream RBAC prerequisites. These authenticate service-to-service calls,
+not the incoming PoC user.
+
+For the author's test deployment, the MAF pipeline exposes `enableEasyAuth`
+(default `false`) and the helper exposes `-EnableEasyAuth` to opt in.
+An application client GUID is required only when enabled. Off mode explicitly
+disables existing platform Easy Auth and the application's check; use the
+customer's own configuration process for customer-managed applications.
 
 **Identity flow in plain language:**
 
 ```text
-ADO service connection -> creates/deploys resources (deployment only)
+Platform IaC identity -> manages infrastructure and platform grants
+Application ADO identity -> creates agent versions/delivers application code
 App Service managed identity -> calls Foundry agents/models
 Verified remote RAG tool identity -> reads the Search index
 App Service managed identity -> blueprint federation -> Agent ID token
@@ -249,20 +294,23 @@ the in-process specialist wrappers are not independently registered identities.
    [.env.sample](./.env.sample). It is not automatically imported from dotenv.
    Populate applicable placeholders; do not put generated Agent 365 secrets
    in ordinary variables.
-2. Create separate **Azure Resource Manager / workload identity federation**
-   service connections. Enter their names in:
-   `ADO_AGENT_SERVICE_CONNECTION`, `ADO_INFRASTRUCTURE_SERVICE_CONNECTION`,
-   `ADO_APP_SERVICE_CONNECTION`, `ADO_AGENT365_SERVICE_CONNECTION`.
+2. Confirm an approved **Azure Resource Manager / workload identity federation**
+   agent-creation connection is supplied as `ADO_AGENT_SERVICE_CONNECTION`.
+   Customer package delivery uses its own approved app connection.
+   Infrastructure/Agent 365 helper connections are needed only for separately
+   approved platform/test change stages, not normal customer onboarding.
 3. The Azure administrator grants the connection **principal** the matching
    roles from section 3, at the stated scopes. Do not grant all four identities
    subscription Owner. Verify tenant, subscription and WIF subject/issuer.
-4. Create environments named by `ADO_INFRASTRUCTURE_ENVIRONMENT_NAME`,
-   `ADO_AGENT_ENVIRONMENT_NAME`, `ADO_MAF_ENVIRONMENT_NAME` and
-   `ADO_AGENT365_ENVIRONMENT_NAME`. Add appropriate approvers/checks.
+4. Confirm protected application environments and appropriate approvers/checks.
+   Infrastructure/Agent 365 environments apply only if those optional
+   platform/test stages are explicitly used.
 5. Explicitly authorize each pipeline to use only its connections, environment,
    variable group and agent pools. Do not enable unrestricted pipeline access.
-6. Create the main pipeline from `azure-pipelines.yml` and the MAF pipeline from
-   `02-governed-agents/03-maf-multi-agent/azure-pipelines.yml`.
+6. Use the main `azure-pipelines.yml` for agent application stages with
+   infrastructure/Agent 365 changes disabled. The supplied MAF YAML is a
+   combined test reference: use the customer's package-only delivery pipeline
+   instead, unless platform owners explicitly adopt and review its mutations.
 
 ### 7.2 Prepare the self-hosted machines
 
@@ -272,6 +320,10 @@ identity just to execute these pipelines.
 
 The existing tasks mix Bash and Windows PowerShell paths. Use **two OS-specific
 pools** rather than putting a Linux job on a Windows VM or vice versa:
+
+This mixed-OS requirement describes the full reference/test pipeline. A
+customer running only Linux agent application stages does not need a Windows
+VM merely to reproduce unused infrastructure helpers.
 
 | Pool | Jobs | Required tools/configuration |
 |---|---|---|
@@ -318,17 +370,20 @@ or successful tool installation.
 
 1. Main pipeline: set all mutation parameters false for a validation-only run.
    `createPromptAgent` defaults true, so explicitly clear it.
-2. Main pipeline: set `provisionInfrastructure=true` and both creation flags
-   false. Verify project/monitoring resources.
+2. Verify platform handover evidence; keep `provisionInfrastructure=false`
+   and `enableAgent365Foundry=false`. Do not provision customer infrastructure
+   with the author/test helper.
 3. Main pipeline: set the approved creation flags true and infrastructure
    false. Download the restricted `foundry-agent-responses` artifact; resolve
    agent-level identities before assigning data roles.
-4. Complete Prompt/RAG tests before running the MAF pipeline.
-5. Run the MAF pipeline with `provisionAgent365=false`; verify authentication,
-   model calls and retrieval.
-6. Enable Foundry Agent 365 only after section 8 approval. Keep MAF
-   `provisionAgent365=false` until its separate unattended authentication
-   acceptance test passes.
+4. Complete Prompt/RAG tests before delivering MAF application code.
+5. Use customer-owned package delivery to the existing web app, then verify
+   authentication, model calls and retrieval. The supplied MAF pipeline still
+   provisions/configures resources when `provisionAgent365=false`; that flag
+   does not make it a customer package-only pipeline.
+6. Verify Agent 365 prerequisites supplied by the identity/platform team.
+   Section 8 documents admin responsibilities and test-helper behavior, not
+   mandatory developer setup. Never rerun registration solely to obtain IDs.
 
 For a parent repository containing this PoC as a subfolder, set the YAML
 `pocDirectory` parameter to `foundry-agents-poc`; for a standalone PoC checkout
@@ -336,6 +391,12 @@ leave it as `.`. Multi-repository checkouts/custom checkout paths require an
 explicitly reviewed path adjustment.
 
 ## 8. Agent 365: admin setup before pipeline automation
+
+For customer use, the platform/identity team supplies the
+[Agent 365 prerequisite states](./CUSTOMER-PREREQUISITES.md#6-agent-365-prerequisites)
+through its approved process. The PowerShell commands below explain author/test
+helpers and platform operations; they are not customer application onboarding
+steps. Use read/verification checks against existing integration state.
 
 ### 8.1 Tenant approval
 
@@ -457,7 +518,7 @@ Keep a restricted customer register, not secrets in the repository:
 | Agent release | Name, actual version, endpoint/version selector, SDK/API versions, commit/build |
 | Identity | New/legacy model, blueprint application/client and object IDs, blueprint principal ID, agent application/client and principal object IDs |
 | Authorization | Connection authentication mode, exact role/scope, owner/data-owner approval, denied-access result |
-| MAF | Web app ID, managed identity principal ID, Easy Auth app ID, caller policy |
+| MAF | Web app ID, MI principal ID, selected auth mode and network boundary; Easy Auth app ID/caller policy only if enabled |
 | Agent 365 | Consent/licensing approval, account-wide/residency approval, registration IDs, federation issuer/subject/audience |
 | Operations | Synthetic invocation timestamp/request/trace IDs, receipt evidence in both telemetry systems, redaction and alert results |
 | Lifecycle | Owner, sponsor, risk approval, expiry/review date, rollback reference |
@@ -482,9 +543,10 @@ evidence for each row. All applicable checks must pass before handover.
 | RAG negative | In a disposable setup remove the exact reader grant (ensure no other inherited access), then repeat after propagation | Search authorization denied; no fabricated source answer; restore only the approved grant and confirm success |
 | Data boundary | Try restricted-document and cross-user questions | Required access policy enforced; current code alone does not implement user-level filtering |
 | Safety | Run approved injection, prohibited-content and exfiltration test cases | Approved guardrail outcomes and measured customer thresholds; no secrets/source leakage |
-| Unauthenticated API | Call `/api/chat` through App Service without login | 401/403 or Easy Auth redirect, never a generated answer |
-| Authenticated API | Call via approved Easy Auth client with a synthetic question | JSON `answer`, `participants`, nonempty `request_id` |
-| Readiness | Authenticated GET `/healthz` and `/readyz` | `{"status":"healthy"}` and `{"status":"ready"}`; these do not test downstream permissions |
+| Controlled PoC without Easy Auth | Call `/api/chat` without a token from an approved network; separately test an unapproved network | Approved network gets JSON `answer`, `participants`, `request_id`; unapproved network cannot reach/use the API |
+| Unauthenticated API with Easy Auth | Only if enabled: call `/api/chat` without login | 401/403 or Easy Auth redirect, never a generated answer |
+| Authenticated API with Easy Auth | Only if enabled: call via approved client with a synthetic question | JSON `answer`, `participants`, nonempty `request_id` |
+| Readiness | GET `/healthz` and `/readyz` using the selected auth mode and allowed network | `{"status":"healthy"}` and `{"status":"ready"}`; these do not test downstream permissions |
 | Failure behavior | Exercise a controlled unavailable dependency/timeout | Visible failure, no success-shaped fabricated result; workflow timeout is HTTP 504 |
 | Azure telemetry | Record UTC time/request ID, invoke success and controlled failure, inspect Insights after ingestion | Matching request/dependency/log evidence, duration/failure correlation |
 | Agent 365 configuration | Fresh ARM read plus Entra/Agent 365 registration inspection | Foundry enabled; MAF IDs, sponsor and grants match the register |
@@ -494,8 +556,19 @@ evidence for each row. All applicable checks must pass before handover.
 | ADO isolation | Run with actual service connections and no cached human login | All allowed actions succeed; unapproved grants/operations remain denied |
 | Recovery | Rehearse the approved rollback in a disposable environment | Previous service behavior restored and evidence retained |
 
-For MAF, a PowerShell authenticated request can use a token acquired by an
-approved client for the configured API audience (not an ARM or Graph token):
+For the controlled PoC without Easy Auth, call from the approved network without
+an Authorization header:
+
+```powershell
+$webAppName = "<web-app-name>"
+Invoke-RestMethod -Method Post `
+  -Uri "https://$webAppName.azurewebsites.net/api/chat" `
+  -ContentType "application/json" `
+  -Body '{"message":"Summarize the synthetic onboarding source and cite it."}'
+```
+
+Only if Easy Auth is enabled, an authenticated request can use a token acquired
+by an approved client for the configured API audience (not an ARM/Graph token):
 
 ```powershell
 $webAppName = "<web-app-name>"

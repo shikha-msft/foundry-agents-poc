@@ -4,6 +4,12 @@ For a new customer environment, start with the
 [customer handover runbook](../CUSTOMER-HANDOVER.md). It includes setup order,
 service-connection permissions, self-hosted pools, verification and recovery.
 
+Customer infrastructure, providers and RBAC must already be supplied by
+customer IaC/the platform team. Complete the
+[customer prerequisite tables](../CUSTOMER-PREREQUISITES.md) before creating
+agent definitions. Provisioning PowerShell scripts are author/test helpers,
+not the customer's infrastructure delivery process.
+
 This folder defines the governed-agent pattern for the project configured by
 `GOVERNED_PROJECT_DISPLAY_NAME`.
 
@@ -11,10 +17,13 @@ The governed implementation categories are:
 
 1. [Governed Prompt Agent](./01-prompt-agent/README.md)
 2. [Governed RAG Agent](./02-rag-agent/README.md)
-3. [MAF Multi-Agent App Service](./03-maf-multi-agent/README.md)
+3. [Multimodal TTS/STT HTTP API](./03-multimodal-tts-agent/README.md)
+4. [MAF Multi-Agent App Service](./04-maf-multi-agent/README.md)
 
-Both agents use Microsoft Foundry prompt agents, Microsoft Entra Agent ID, and
-the project's mandatory Application Insights observability baseline.
+Prompt/RAG use Microsoft Foundry Prompt Agents. The audio API calls Foundry
+audio model deployments directly; MAF coordinates the remote Prompt/RAG agents.
+The [audio guide](./03-multimodal-tts-agent/README.md) documents its custom
+Agent ID/Agent 365 integration gap rather than claiming automatic coverage.
 
 ## Environment
 
@@ -40,7 +49,8 @@ Each agent is a self-contained application under its respective folder:
 |---|---|
 | Prompt | [`01-prompt-agent`](./01-prompt-agent/) |
 | Azure AI Search RAG | [`02-rag-agent`](./02-rag-agent/) |
-| MAF multi-agent API | [`03-maf-multi-agent`](./03-maf-multi-agent/) |
+| Multimodal TTS/STT API | [`03-multimodal-tts-agent`](./03-multimodal-tts-agent/) |
+| MAF multi-agent API | [`04-maf-multi-agent`](./04-maf-multi-agent/) |
 
 The standalone Prompt and RAG folders contain:
 
@@ -60,7 +70,8 @@ The manually triggered
 [`azure-pipelines.yml`](../azure-pipelines.yml) validates both implementations
 and can create either or both agent versions through an Azure DevOps workload
 identity service connection. Pipeline setup and RBAC requirements are
-documented in the parent POC README.
+documented in the parent POC README. A separate validation job tests the audio
+HTTP sample without creating models, agents or infrastructure.
 
 Creating another version with the same agent name is intentional: Foundry
 keeps the agent name and creates a new immutable version.

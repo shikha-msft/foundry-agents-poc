@@ -91,6 +91,29 @@ stages:
               AZURE_AI_SEARCH_QUERY_TYPE: $(AZURE_AI_SEARCH_QUERY_TYPE)
               AZURE_AI_SEARCH_TOP_K: $(AZURE_AI_SEARCH_TOP_K)
 
+      - job: ValidateAudio
+        displayName: Validate Foundry TTS and transcription API
+        pool:
+          ${{ if eq(parameters.linuxPoolName, 'Microsoft-hosted') }}:
+            vmImage: ubuntu-latest
+          ${{ else }}:
+            name: ${{ parameters.linuxPoolName }}
+            demands:
+              - Agent.OS -equals Linux
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+          - bash: |
+              set -euo pipefail
+              python -m pip install -r requirements-dev.txt
+              python -m pytest
+              python -m ruff check audio_agent tests
+              python -m ruff format --check audio_agent tests
+              python -m compileall -q audio_agent
+            workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents/03-multimodal-tts-agent
+            displayName: Test audio API without cloud access
+
   - stage: Provision
     displayName: Provision Foundry projects
     dependsOn: Validate

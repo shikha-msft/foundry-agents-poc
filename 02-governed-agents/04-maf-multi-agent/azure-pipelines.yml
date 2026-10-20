@@ -2,6 +2,10 @@ trigger: none
 pr: none
 
 parameters:
+  - name: enableEasyAuth
+    displayName: Enable optional Easy Auth (requires ENTRA_CLIENT_ID)
+    type: boolean
+    default: false
   - name: linuxPoolName
     displayName: Linux pool name (Microsoft-hosted uses ubuntu-latest)
     type: string
@@ -46,7 +50,7 @@ stages:
               python -m ruff check app tests
               python -m ruff format --check app tests
               python -m compileall -q app
-            workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents/03-maf-multi-agent
+            workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents/04-maf-multi-agent
             displayName: Test MAF application
 
   - stage: Deploy
@@ -67,15 +71,25 @@ stages:
             deploy:
               steps:
                 - checkout: self
+                - pwsh: .\tests\test_deployment.ps1
+                  displayName: Test optional Easy Auth deployment modes
+                  workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}\02-governed-agents\04-maf-multi-agent
                 - task: AzureCLI@2
                   displayName: Provision and deploy MAF App Service
                   inputs:
                     azureSubscription: $(ADO_APP_SERVICE_CONNECTION)
                     scriptType: pscore
                     scriptLocation: inlineScript
-                    workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}\02-governed-agents\03-maf-multi-agent
+                    workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}\02-governed-agents\04-maf-multi-agent
                     inlineScript: |
-                      .\deploy.ps1 `
+                      $easyAuthOptions = @{}
+                      if ([bool]::Parse("${{ parameters.enableEasyAuth }}")) {
+                        $easyAuthOptions = @{
+                          EnableEasyAuth = $true
+                          EntraClientId = $env:EASY_AUTH_CLIENT_ID
+                        }
+                      }
+                      .\deploy.ps1 @easyAuthOptions `
                         -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
                         -TenantId "$(AZURE_TENANT_ID)" `
                         -ResourceGroupName "$(AZURE_RESOURCE_GROUP)" `
@@ -88,8 +102,10 @@ stages:
                         -ModelDeploymentName "$(MODEL_DEPLOYMENT_NAME)" `
                         -PromptAgentName "$(PROMPT_AGENT_NAME)" `
                         -RagAgentName "$(RAG_AGENT_NAME)" `
-                        -ApplicationInsightsName "$(GOVERNED_APPLICATION_INSIGHTS_NAME)" `
-                        -EntraClientId "$(ENTRA_CLIENT_ID)"
+                        -ApplicationInsightsName "$(GOVERNED_APPLICATION_INSIGHTS_NAME)"
+                  env:
+                    ${{ if eq(parameters.enableEasyAuth, true) }}:
+                      EASY_AUTH_CLIENT_ID: $(ENTRA_CLIENT_ID)
 
   - stage: Agent365
     displayName: Register MAF with Agent 365
