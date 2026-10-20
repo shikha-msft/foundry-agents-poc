@@ -10,12 +10,18 @@ V2 projects under an existing Foundry account:
 
 ## Implementation guides
 
+- **[Start here: customer setup and handover runbook](./CUSTOMER-HANDOVER.md)** -
+  ordered setup, persona/permission matrix, self-hosted ADO, identity checks,
+  Agent 365 approval gates, acceptance evidence, troubleshooting and rollback.
 - [NoCode Experimentation Agents](./01-experimentation-agents/README.md)
 - [Governed POC Agents](./02-governed-agents/README.md)
 - [Microsoft Agent Framework Multi-Agent App](./02-governed-agents/03-maf-multi-agent/README.md)
+- [Agent 365: concepts, onboarding and operations](./agent-365/README.md)
+- [Entra Agent Identity: blueprints, permissions and token flow](./agent-identity/README.md)
 
-The existing Foundry account is referenced and is not modified. Each project
-receives:
+The base project deployment references the existing Foundry account without
+changing its account settings. **Optional Agent 365 setup does modify the
+shared account** and affects all its projects/Prompt Agents. Each project receives:
 
 - A system-assigned managed identity.
 - A dedicated Log Analytics workspace.
@@ -43,6 +49,15 @@ expected region, and has Foundry project management enabled.
 
 ## Prerequisites
 
+**Microsoft Foundry V2 is required.** Before running this kit, the customer
+must have an existing Microsoft Foundry resource (`AIServices` account) with
+Foundry project management enabled in the selected region. Classic hub-based
+Azure AI Foundry projects are not supported by this kit. The base deployment
+creates projects under that resource; it does not create or migrate the parent
+Foundry account. Agent creation also requires an approved model deployment and
+a project endpoint in the form
+`https://<account-name>.services.ai.azure.com/api/projects/<project-name>`.
+
 1. Azure CLI authenticated to the tenant configured by `AZURE_TENANT_ID`.
 2. Permission to create resources in the resource group configured by
    `AZURE_RESOURCE_GROUP`.
@@ -54,8 +69,9 @@ expected region, and has Foundry project management enabled.
    - `Microsoft.OperationalInsights`
    - `Microsoft.Authorization`
 
-The existing account currently permits public network access. The script does
-not change that shared account setting.
+Confirm the customer's network configuration before deployment. The script
+does not change the shared account's public/private network settings or
+provision private connectivity.
 
 ## Run
 
@@ -104,6 +120,11 @@ The integration follows the supported hosting model:
   prompt or response bodies.
 
 Prerequisites:
+
+The following are administrator prerequisites, not proof that an unattended
+service connection can run the Agent 365 CLI. Follow the
+[Graph/authentication and automation gates](./CUSTOMER-HANDOVER.md#8-agent-365-admin-setup-before-pipeline-automation)
+before enabling MAF registration in ADO.
 
 1. Agent 365 is licensed and enabled in the Entra tenant.
 2. Tenant-level Agent 365 consent is complete.
@@ -164,6 +185,9 @@ produces a new immutable version. Run it manually and select:
 | `createPromptAgent` | `true` | Create a new `PROMPT_AGENT_NAME` version |
 | `createRagAgent` | `false` | Create a new `RAG_AGENT_NAME` version |
 | `enableAgent365Foundry` | `false` | Enable and validate built-in Agent 365 integration on the Foundry resource |
+| `linuxPoolName` | `Microsoft-hosted` | Linux self-hosted pool, or hosted Ubuntu by default |
+| `windowsPoolName` | `Microsoft-hosted` | Windows self-hosted pool, or hosted Windows by default |
+| `pocDirectory` | `.` | PoC path relative to the checkout root; use `foundry-agents-poc` for a parent-repository checkout |
 
 ### Pipeline setup
 
@@ -188,15 +212,27 @@ produces a new immutable version. Run it manually and select:
 6. For Agent 365, configure `ADO_AGENT365_SERVICE_CONNECTION` and
    `ADO_AGENT365_ENVIRONMENT_NAME`. Protect the environment with an Agent 365
    administrator approval.
-7. Create a pipeline from `foundry-agents-poc/azure-pipelines.yml`.
+7. Create a pipeline from `azure-pipelines.yml` for a standalone PoC repository,
+   or `foundry-agents-poc/azure-pipelines.yml` in a parent checkout (set
+   `pocDirectory` accordingly). For self-hosted agents, complete the
+   [OS-specific pool and tool setup](./CUSTOMER-HANDOVER.md#7-azure-devops-and-self-hosted-vms).
 
 The pipeline authenticates with `AzureCLI@2`; the Python SDK then uses that
 federated Azure CLI session. It does not upload either local `.env` file and
 does not require stored Azure client secrets.
 
-After a RAG Agent version is created, grant **Search Index Data Reader** to
-the exact Agent Identity returned in the pipeline artifact. The pipeline
-service identity and the created RAG Agent Identity are different principals.
+After a RAG Agent version is created, resolve the agent-level identity and
+verify the Search connection's actual retrieval principal before granting
+**Search Index Data Reader**. A version response may not contain all identity
+fields. Follow the [identity checks](./CUSTOMER-HANDOVER.md#53-resolve-the-blueprintidentity-model-before-granting-roles).
+The pipeline service identity and runtime retrieval identity are different.
+
+## Customer acceptance
+
+Documentation is not a tenant deployment certification. Complete the
+[clean-environment acceptance checklist](./CUSTOMER-HANDOVER.md#10-acceptance-expected-results-not-just-successful-commands)
+and retain restricted evidence before customer sign-off. The PoC does not yet
+wire in the separate shared harness or automated safety/evaluation gates.
 
 For local agent creation, the governed-agent kit also supports Azure CLI REST
 and `azd`-authenticated REST. See the

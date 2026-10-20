@@ -3,6 +3,11 @@
 This folder contains a governed multi-agent API built with **Microsoft Agent
 Framework (MAF)** and hosted on **Azure App Service for Linux**.
 
+For a new customer environment, follow the
+[customer runbook](../../CUSTOMER-HANDOVER.md) first. Foundry Hosted Agents
+are not a prerequisite. Agent 365 unattended setup remains gated on the
+customer authentication/consent tests in that runbook.
+
 ## Architecture
 
 ```text
@@ -29,9 +34,10 @@ MAF Magentic workflow
 ```
 
 The App Service system-assigned managed identity authenticates to the project
-configured by `PROJECT_ENDPOINT`. The remote Prompt and RAG agents retain their own Foundry
-managed blueprints and Agent Identities. In particular, Search permissions
-remain on the RAG Agent Identity, not on the App Service identity.
+configured by `PROJECT_ENDPOINT`. Verify the remote agents' new/legacy identity
+model and Search connection authentication before granting data access. For an
+Agent ID-aware RAG tool, Search permissions belong on its verified Agent
+Identity, not the App Service identity.
 
 ## Agent responsibilities
 
@@ -69,8 +75,8 @@ Autonomy is bounded by:
 
 1. The Foundry project and `MODEL_DEPLOYMENT_NAME` deployment exist.
 2. `PROMPT_AGENT_NAME` exists and is active.
-3. `RAG_AGENT_NAME` exists and its exact Agent Identity has **Search Index
-   Data Reader** on the approved Search service or index.
+3. `RAG_AGENT_NAME` exists and its verified retrieval principal has **Search
+   Index Data Reader** on the approved supported Search scope.
 4. The App Service managed identity has **Foundry User** on the Foundry
    account or the narrower supported project scope.
 5. `GOVERNED_APPLICATION_INSIGHTS_NAME` exists.
@@ -83,17 +89,21 @@ Autonomy is bounded by:
 
 ## Run locally
 
+From the PoC checkout root:
+
 ```powershell
-cd foundry-agents-poc\02-governed-agents\03-maf-multi-agent
+cd .\02-governed-agents\03-maf-multi-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
+Copy-Item .env.sample .env
+# Populate .env; set REQUIRE_APP_SERVICE_AUTH=false for local development only.
 az login
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Copy `.env.sample` to `.env` and set `REQUIRE_APP_SERVICE_AUTH=false` only for
-local development. The populated `.env` is ignored by Git. Production must use
+Configure the copied `.env` before starting Uvicorn. The populated file is
+ignored by Git. Production must use
 Easy Auth and `REQUIRE_APP_SERVICE_AUTH=true`.
 
 Test locally:
@@ -146,10 +156,11 @@ The MAF application is registered once as an S2S orchestrator. The Prompt and
 Retrieval specialists are not separate Agent 365 registrations because they
 delegate to the existing remote Foundry agents.
 
-After deploying App Service:
+After deploying App Service, from this MAF folder return to the PoC root
+(install the CLI only if it is not already installed):
 
 ```powershell
-cd ..\..\..
+cd ..\..
 dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli
 .\provision-agent365.ps1 -Scope Maf -WhatIf
 .\provision-agent365.ps1 -Scope Maf
@@ -165,9 +176,20 @@ The provisioning script:
 5. Configures `A365_BLUEPRINT_CLIENT_ID`, `A365_AGENT_CLIENT_ID`, and the
    Agent 365 exporter settings on App Service.
 
+This is the intended setup sequence, not evidence of tenant validation.
+The CLI may need separate configuration/interactive authentication;
+`AzureCLI@2` does not establish that it can run unattended. Federation currently
+uses Azure CLI Graph calls, whose token/endpoint compatibility must be verified.
+Follow the [administrator setup and automation gate](../../CUSTOMER-HANDOVER.md#8-agent-365-admin-setup-before-pipeline-automation).
+MAF `-WhatIf` invokes the CLI's dry-run path and still needs installed tools,
+supported flags and authenticated read access.
+
 Do not copy the generated blueprint secret into source control or App Service
 settings. Runtime export uses the App Service managed identity, the blueprint
 federated trust, and the Agent Identity `fmi_path` exchange.
+This flow authenticates **Agent 365 telemetry**. Calls to Foundry still use
+the App Service managed identity. The in-process specialist wrappers do not
+each receive a separate Agent 365 registration.
 
 ## Deploy through Azure DevOps
 
@@ -190,11 +212,19 @@ The service connection identity requires:
 - **User Access Administrator** on the Foundry account only to assign
   **Foundry User** to the App Service managed identity.
 
-Configure an approval on the Azure DevOps environment selected by the pipeline
-parameter. The pipeline has no automatic trigger.
+Configure approvals on the environments named by `ADO_MAF_ENVIRONMENT_NAME`
+and `ADO_AGENT365_ENVIRONMENT_NAME`. The pipeline has no automatic trigger.
 
-Set `provisionAgent365: true` only for an approved run. The normal deployment
-path leaves Agent 365 unchanged.
+The YAML supports `linuxPoolName` and `windowsPoolName` (both default to
+`Microsoft-hosted`), plus `pocDirectory` (default `.`). Set OS-specific pool
+names for self-hosted execution; use `pocDirectory=foundry-agents-poc` only for
+a parent-repository checkout. See the [self-hosted setup](../../CUSTOMER-HANDOVER.md#7-azure-devops-and-self-hosted-vms)
+for tools, Python tool cache, networking and service-account requirements.
+
+Keep `provisionAgent365: false` until the actual unattended CLI/Graph principal
+passes the runbook's acceptance gate. An ADO approval alone does not grant
+Graph permissions or tenant consent. The normal deployment path leaves
+Agent 365 unchanged.
 
 ## Observability
 

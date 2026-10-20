@@ -2,6 +2,18 @@ trigger: none
 pr: none
 
 parameters:
+  - name: linuxPoolName
+    displayName: Linux pool name (Microsoft-hosted uses ubuntu-latest)
+    type: string
+    default: Microsoft-hosted
+  - name: windowsPoolName
+    displayName: Windows pool name (Microsoft-hosted uses windows-latest)
+    type: string
+    default: Microsoft-hosted
+  - name: pocDirectory
+    displayName: PoC directory relative to checkout root
+    type: string
+    default: .
   - name: provisionInfrastructure
     displayName: Create or update Foundry projects and monitoring
     type: boolean
@@ -30,7 +42,12 @@ stages:
       - job: ValidateAgents
         displayName: Validate Prompt and RAG agents
         pool:
-          vmImage: ubuntu-latest
+          ${{ if eq(parameters.linuxPoolName, 'Microsoft-hosted') }}:
+            vmImage: ubuntu-latest
+          ${{ else }}:
+            name: ${{ parameters.linuxPoolName }}
+            demands:
+              - Agent.OS -equals Linux
         steps:
           - task: UsePythonVersion@0
             displayName: Use Python $(pythonVersion)
@@ -46,7 +63,7 @@ stages:
               python -m ruff check 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
               python -m ruff format --check 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
               python -m py_compile 01-prompt-agent/prompt_agent.py 02-rag-agent/rag_agent.py
-            workingDirectory: foundry-agents-poc/02-governed-agents
+            workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents
             displayName: Install and validate Python
 
           - bash: |
@@ -61,7 +78,7 @@ stages:
               assert index["index_name"] == settings.search_index_name
               print("RAG definition validation passed.")
               PY
-            workingDirectory: foundry-agents-poc/02-governed-agents/02-rag-agent
+            workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents/02-rag-agent
             displayName: Validate RAG definition
             env:
               PROJECT_ENDPOINT: $(PROJECT_ENDPOINT)
@@ -82,7 +99,12 @@ stages:
       - deployment: ProvisionFoundry
         displayName: Run idempotent Foundry provisioning
         pool:
-          vmImage: windows-latest
+          ${{ if eq(parameters.windowsPoolName, 'Microsoft-hosted') }}:
+            vmImage: windows-latest
+          ${{ else }}:
+            name: ${{ parameters.windowsPoolName }}
+            demands:
+              - Agent.OS -equals Windows_NT
         environment: $(ADO_INFRASTRUCTURE_ENVIRONMENT_NAME)
         strategy:
           runOnce:
@@ -95,7 +117,7 @@ stages:
                     azureSubscription: $(ADO_INFRASTRUCTURE_SERVICE_CONNECTION)
                     scriptType: pscore
                     scriptLocation: inlineScript
-                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc
+                    workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}
                     inlineScript: |
                       .\deploy.ps1 `
                         -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
@@ -130,7 +152,12 @@ stages:
       - deployment: CreateAgents
         displayName: Create selected agents
         pool:
-          vmImage: ubuntu-latest
+          ${{ if eq(parameters.linuxPoolName, 'Microsoft-hosted') }}:
+            vmImage: ubuntu-latest
+          ${{ else }}:
+            name: ${{ parameters.linuxPoolName }}
+            demands:
+              - Agent.OS -equals Linux
         environment: $(ADO_AGENT_ENVIRONMENT_NAME)
         strategy:
           runOnce:
@@ -147,7 +174,7 @@ stages:
                     python -m pip install \
                       -r 01-prompt-agent/requirements.txt \
                       -r 02-rag-agent/requirements.txt
-                  workingDirectory: foundry-agents-poc/02-governed-agents
+                  workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents
                   displayName: Install agent dependencies
 
                 - ${{ if eq(parameters.createPromptAgent, true) }}:
@@ -157,7 +184,7 @@ stages:
                         azureSubscription: $(ADO_AGENT_SERVICE_CONNECTION)
                         scriptType: bash
                         scriptLocation: inlineScript
-                        workingDirectory: $(Build.SourcesDirectory)/foundry-agents-poc/02-governed-agents/01-prompt-agent
+                        workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents/01-prompt-agent
                         inlineScript: |
                           set -euo pipefail
                           python prompt_agent.py create | tee "$(Build.ArtifactStagingDirectory)/prompt-agent.json"
@@ -176,7 +203,7 @@ stages:
                         azureSubscription: $(ADO_AGENT_SERVICE_CONNECTION)
                         scriptType: bash
                         scriptLocation: inlineScript
-                        workingDirectory: $(Build.SourcesDirectory)/foundry-agents-poc/02-governed-agents/02-rag-agent
+                        workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents/02-rag-agent
                         inlineScript: |
                           set -euo pipefail
                           if [ -z "${AZURE_AI_SEARCH_INDEX_NAME:-}" ]; then
@@ -219,7 +246,12 @@ stages:
       - deployment: EnableFoundryAgent365
         displayName: Enable Foundry Agent 365 data collection
         pool:
-          vmImage: windows-latest
+          ${{ if eq(parameters.windowsPoolName, 'Microsoft-hosted') }}:
+            vmImage: windows-latest
+          ${{ else }}:
+            name: ${{ parameters.windowsPoolName }}
+            demands:
+              - Agent.OS -equals Windows_NT
         environment: $(ADO_AGENT365_ENVIRONMENT_NAME)
         strategy:
           runOnce:
@@ -232,7 +264,7 @@ stages:
                     azureSubscription: $(ADO_AGENT365_SERVICE_CONNECTION)
                     scriptType: pscore
                     scriptLocation: inlineScript
-                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc
+                    workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}
                     inlineScript: |
                       .\provision-agent365.ps1 `
                         -Scope Foundry `

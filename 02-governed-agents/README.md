@@ -1,5 +1,9 @@
 # 02 - Governed POC Agents
 
+For a new customer environment, start with the
+[customer handover runbook](../CUSTOMER-HANDOVER.md). It includes setup order,
+service-connection permissions, self-hosted pools, verification and recovery.
+
 This folder defines the governed-agent pattern for the project configured by
 `GOVERNED_PROJECT_DISPLAY_NAME`.
 
@@ -38,13 +42,13 @@ Each agent is a self-contained application under its respective folder:
 | Azure AI Search RAG | [`02-rag-agent`](./02-rag-agent/) |
 | MAF multi-agent API | [`03-maf-multi-agent`](./03-maf-multi-agent/) |
 
-Each folder contains:
+The standalone Prompt and RAG folders contain:
 
 - An independently runnable Python script with `create`, `list`, and `invoke`
   commands.
 - Its own governed instructions.
 - A `requirements.txt`.
-- A local `.env` with the POC values.
+- An ignored local `.env`, which the customer creates from the template.
 - A customer-safe `.env.sample` listing every configurable variable.
 
 Both implementations use `azure-ai-projects` 2.6, Azure CLI authentication for
@@ -122,20 +126,23 @@ Before creating the RAG Agent through any option, populate
 For Foundry prompt agents, do not manually create a duplicate Entra blueprint
 before creating the agent.
 
-This implementation uses the newer Foundry agent object model exposed by
-`azure-ai-projects` 2.6. Foundry creates the managed blueprint and Agent
-Identity as part of `client.agents.create_version(...)`.
+This implementation targets the newer Foundry agent object model using
+`azure-ai-projects` 2.6. Microsoft's
+[migration guide](https://learn.microsoft.com/azure/foundry/agents/how-to/migrate-agent-applications)
+documents a unique blueprint and identity at **agent creation** for new-model
+agents. This does not mean that every version creates another identity.
 
-Each successful creation returns a blueprint type, blueprint ID, blueprint
-principal, blueprint client/application ID, Agent Identity, and agent GUID.
-Record those values in the approved governance register rather than in the
-shareable repository.
+Legacy agents can still use a shared project development identity, with a
+distinct identity in the legacy Agent Application publishing flow. Creating a
+new version of an existing legacy agent does not prove identity migration.
+Inspect the actual agent object and API/tenant support before claiming isolation.
 
-The older Agent Application publishing model used a shared development
-identity and created a distinct identity when publishing. Do not apply that
-assumption to this code. Always use the blueprint and `instance_identity`
-returned by the created agent version, and verify the identifiers again when a
-new version or endpoint is promoted.
+The scripts serialize the version-creation response. It may not include every
+agent-level identity field. Use `list` and, when necessary, the agent-details
+API to resolve `blueprint` and `instance_identity`, then verify their Entra
+objects. Record blueprint/client/principal IDs, agent identity and returned
+agent identifier in the approved governance register, not in the repository.
+See the [identity verification procedure](../CUSTOMER-HANDOVER.md#53-resolve-the-blueprintidentity-model-before-granting-roles).
 
 ```text
 Governed project managed identity
@@ -150,9 +157,10 @@ Prompt Agent Identity                    RAG Agent Identity
 Prompt-only permissions                  Search/data permissions
 ```
 
-The project managed identity participates in Foundry's managed authentication
-chain. The **Agent Identity** returned for the agent receives downstream data
-roles for tools that support Agent ID authentication.
+This diagram represents the intended new-model, Agent ID-aware tool path.
+Verify the actual connection authentication and runtime principal before
+assigning downstream roles; tools using a project/host identity or key are
+not proof of agent-level authorization.
 
 ## 2. Prerequisites
 
@@ -226,23 +234,24 @@ development access. Developers still require `Foundry User`.
 - [ ] Only synthetic or approved non-production data is used before the
       created Agent Identity receives its reviewed roles.
 
-## 3. Create the managed blueprint and Agent Identity
+## 3. Create the agent and verify its managed identity
 
-The managed blueprint and Agent Identity are created indirectly by Foundry
-when the code creates the agent version.
+For a new-model agent, Foundry manages the blueprint and Agent Identity.
+Do not manually create duplicate identity objects.
 
 1. Open the selected agent folder and install its `requirements.txt`.
 2. Run `python prompt_agent.py create` or `python rag_agent.py create`.
-3. Capture the returned `blueprint`, `blueprint_reference`,
-   `instance_identity`, and `agent_guid` values.
-4. List the agent again with the selected script's `list` command.
+3. Capture the version response and actual agent name/version.
+4. List the agent again and resolve its agent-level `blueprint` and
+   `instance_identity`; record additional identity fields when returned.
 5. Record the identity information in the governance register.
-6. Assign downstream roles only to the returned Agent Identity.
+6. Verify the tool's actual authentication principal, then assign only its
+   approved downstream roles.
 7. Run positive and negative authorization tests.
 
-If the identity fields do not appear immediately, wait for provisioning and
-refresh. Do not work around the delay by creating an unrelated application
-registration.
+If identity fields are absent/null, check the agent-level response, API version,
+tenant rollout and legacy model. Do not assume it is only a provisioning delay
+or work around it by creating an unrelated application registration.
 
 The managed blueprint is attached to the agent response rather than the
 project ARM response. Query the agent through the Foundry data plane instead
@@ -257,7 +266,7 @@ The Prompt Agent:
 - Uses approved instructions and model configuration.
 - Has no RAG data permissions by default.
 - Can receive only the API or MCP permissions required for its business task.
-- Receives a managed blueprint and Agent Identity when its version is created.
+- Has a managed blueprint and Agent Identity under the verified new object model.
 
 Follow [01-prompt-agent/README.md](./01-prompt-agent/README.md).
 
@@ -268,7 +277,7 @@ The RAG Agent:
 - Uses Azure AI Search or a reviewed file-search/vector-store pattern.
 - Receives read-only retrieval permissions by default.
 - Requires citation, groundedness, and access-boundary evaluations.
-- Receives its own managed blueprint and Agent Identity at creation.
+- Must have its distinct identity verified before claiming per-agent isolation.
 
 Follow [02-rag-agent/README.md](./02-rag-agent/README.md).
 
@@ -277,11 +286,11 @@ Follow [02-rag-agent/README.md](./02-rag-agent/README.md).
 Repeat these steps separately for the Prompt and RAG agents:
 
 1. Create the agent version.
-2. Record the agent version, blueprint ID, blueprint principal, Agent Identity,
-   and agent GUID from the response.
+2. Record the agent version plus blueprint, principal and Agent Identity IDs
+   from agent-level details and Entra verification.
 3. Obtain approval from the agent owner, data owner, security owner, and role
    assignment administrator.
-4. Assign downstream permissions to that Agent Identity.
+4. Assign downstream permissions to the verified runtime/tool principal.
 5. Complete functional, safety, security, authorization, and trace validation.
 6. Promote or publish only the approved version and endpoint.
 7. Re-read the promoted agent details and verify that its identity IDs still
@@ -406,7 +415,7 @@ Complete this table as each agent is created:
 
 ## 9. Acceptance criteria
 
-- [x] Prompt Agent creation returned a managed blueprint and Agent Identity.
+- [ ] Prompt Agent blueprint and Agent Identity verified in this customer tenant.
 - [ ] RAG Agent creation returns its own managed blueprint and Agent Identity.
 - [ ] Both agents can be tested using only synthetic data.
 - [ ] Prompt Agent has no RAG data permissions.
@@ -428,3 +437,4 @@ Complete this table as each agent is created:
 - [Agent ID setup instructions](https://learn.microsoft.com/entra/agent-id/identity-platform/agent-id-setup-instructions)
 - [Foundry tracing setup](https://learn.microsoft.com/azure/foundry/observability/how-to/trace-agent-setup)
 - [Foundry RBAC](https://learn.microsoft.com/azure/foundry/concepts/rbac-foundry)
+- [New versus legacy identity model](https://learn.microsoft.com/azure/foundry/agents/how-to/migrate-agent-applications)

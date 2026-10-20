@@ -1,8 +1,10 @@
 # Governed RAG Agent
 
 This category is a Microsoft Foundry prompt agent configured for
-retrieval-augmented generation. Foundry creates its managed blueprint and
-distinct Microsoft Entra Agent Identity with the agent version.
+retrieval-augmented generation. New-model agents have a managed blueprint and
+distinct Microsoft Entra Agent Identity; legacy agents can use shared project
+identity. Start with the [customer runbook](../../CUSTOMER-HANDOVER.md), and
+verify the actual agent/tool principal before granting retrieval access.
 
 ## Preferred retrieval pattern
 
@@ -26,7 +28,7 @@ private networking, filtering, lifecycle control, or enterprise-scale search.
   Identity unless the selected Foundry feature requires it.
 - No direct Blob, Cosmos DB, or PostgreSQL access unless the RAG design uses an
   approved Agent ID-aware tool.
-- Dedicated Agent Identity returned at agent-version creation.
+- Dedicated Agent Identity verified at the agent level, not assumed per version.
 
 ## Create with code
 
@@ -40,13 +42,15 @@ All RAG Agent code and configuration are contained in this folder:
 | `.env.sample` | Customer-safe template containing every variable |
 | `requirements.txt` | Runtime dependencies |
 
-Set `AZURE_AI_SEARCH_INDEX_NAME` in `.env`, then run:
+From the PoC checkout root, prepare the application:
 
 ```powershell
-cd foundry-agents-poc\02-governed-agents\02-rag-agent
+cd .\02-governed-agents\02-rag-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.sample .env
+# Populate .env, including AZURE_AI_SEARCH_INDEX_NAME, before continuing.
 az login
 python rag_agent.py create
 ```
@@ -78,9 +82,10 @@ Run the parent [`azure-pipelines.yml`](../../azure-pipelines.yml) with:
   workload-federated connection
 
 The pipeline validates the RAG definition, creates a new version, and
-publishes the creation response as a pipeline artifact. Assign **Search Index
-Data Reader** to the exact RAG Agent Identity returned in that artifact before
-runtime retrieval testing.
+publishes the creation response as a pipeline artifact. Resolve the agent-level
+identity and the Search connection's authentication principal before assigning
+**Search Index Data Reader**. The artifact can contain a version response
+without the agent-level identity fields.
 
 ### Other creation methods
 
@@ -133,8 +138,10 @@ Do not write, delete, ingest, or modify search or source data.
 
 ## Development permissions
 
-Grant only the minimum retrieval permission to the RAG Agent Identity returned
-by the creation response.
+Grant only the minimum retrieval permission to the
+[verified retrieval principal](../../CUSTOMER-HANDOVER.md#53-resolve-the-blueprintidentity-model-before-granting-roles).
+If the connection uses a different identity or key, document the exception;
+do not claim distinct Agent ID enforcement.
 
 For a native Azure AI Search tool:
 
@@ -170,8 +177,8 @@ For direct data tools:
 ## Govern and release
 
 1. Obtain agent owner, data owner, security, and publisher approval.
-2. Record the managed blueprint and Agent Identity returned at creation.
-3. Assign the approved Search/data roles to that Agent Identity.
+2. Record the managed blueprint and Agent Identity from verified agent details.
+3. Assign approved Search/data roles to the verified tool principal.
 4. Run all positive and negative authorization tests.
 5. Promote or publish the approved version and endpoint.
 6. Remove any data role that is not required by the published configuration.

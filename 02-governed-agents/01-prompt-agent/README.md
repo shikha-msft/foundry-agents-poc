@@ -1,14 +1,16 @@
 # Governed Prompt Agent
 
-This category is a Microsoft Foundry prompt agent with a Foundry-managed
-blueprint and distinct Microsoft Entra Agent Identity created with the agent.
+This category targets the new Microsoft Foundry prompt-agent object model with
+a managed blueprint and distinct Microsoft Entra Agent Identity. Verify actual
+agent-level identity details; legacy agents can still use a shared identity.
+Start with the [customer runbook](../../CUSTOMER-HANDOVER.md) for a new tenant.
 
 ## Intended permission profile
 
 - No Search, Storage, Cosmos DB, or PostgreSQL role by default.
 - Only approved MCP, A2A, or API permissions required by the business task.
 - Read-only access unless a separate write-risk assessment is approved.
-- Dedicated Agent Identity returned at agent-version creation.
+- Dedicated Agent Identity verified on the agent object, not assumed per version.
 
 ## Create with code
 
@@ -22,13 +24,15 @@ All Prompt Agent code and configuration are contained in this folder:
 | `.env.sample` | Customer-safe template containing every variable |
 | `requirements.txt` | Runtime dependencies |
 
-Run:
+From the PoC checkout root, run:
 
 ```powershell
-cd foundry-agents-poc\02-governed-agents\01-prompt-agent
+cd .\02-governed-agents\01-prompt-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.sample .env
+# Populate this folder's .env before continuing.
 az login
 python prompt_agent.py create
 ```
@@ -106,8 +110,9 @@ invent a successful result.
 9. Add only approved tools.
 10. Save and test the agent.
 
-Creating the agent returns its `ManagedAgentIdentityBlueprint`, blueprint
-principal, Agent Identity, and agent GUID.
+For a new-model agent, verify its blueprint and Agent Identity using
+[agent-level details](../../CUSTOMER-HANDOVER.md#53-resolve-the-blueprintidentity-model-before-granting-roles).
+Do not assume a version-creation response contains every identity identifier.
 
 ## Test before release
 
@@ -124,8 +129,8 @@ principal, Agent Identity, and agent GUID.
 ## Govern and release
 
 1. Obtain owner, security, and publisher approval.
-2. Record the blueprint and `instance_identity` returned when the version is
-   created.
+2. Record the blueprint and `instance_identity` from verified agent details,
+   together with the version and exact principal object IDs.
 3. Assign only the approved API/MCP/A2A roles to that Agent Identity.
 4. Re-run positive and negative authorization tests.
 5. Promote or publish the approved agent version and endpoint.

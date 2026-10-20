@@ -2,6 +2,18 @@ trigger: none
 pr: none
 
 parameters:
+  - name: linuxPoolName
+    displayName: Linux pool name (Microsoft-hosted uses ubuntu-latest)
+    type: string
+    default: Microsoft-hosted
+  - name: windowsPoolName
+    displayName: Windows pool name (Microsoft-hosted uses windows-latest)
+    type: string
+    default: Microsoft-hosted
+  - name: pocDirectory
+    displayName: PoC directory relative to checkout root
+    type: string
+    default: .
   - name: provisionAgent365
     displayName: Register the MAF orchestrator with Agent 365
     type: boolean
@@ -17,7 +29,12 @@ stages:
     jobs:
       - job: Test
         pool:
-          vmImage: ubuntu-latest
+          ${{ if eq(parameters.linuxPoolName, 'Microsoft-hosted') }}:
+            vmImage: ubuntu-latest
+          ${{ else }}:
+            name: ${{ parameters.linuxPoolName }}
+            demands:
+              - Agent.OS -equals Linux
         steps:
           - task: UsePythonVersion@0
             inputs:
@@ -29,6 +46,7 @@ stages:
               python -m ruff check app tests
               python -m ruff format --check app tests
               python -m compileall -q app
+            workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents/03-maf-multi-agent
             displayName: Test MAF application
 
   - stage: Deploy
@@ -37,7 +55,12 @@ stages:
     jobs:
       - deployment: DeployMafApp
         pool:
-          vmImage: windows-latest
+          ${{ if eq(parameters.windowsPoolName, 'Microsoft-hosted') }}:
+            vmImage: windows-latest
+          ${{ else }}:
+            name: ${{ parameters.windowsPoolName }}
+            demands:
+              - Agent.OS -equals Windows_NT
         environment: $(ADO_MAF_ENVIRONMENT_NAME)
         strategy:
           runOnce:
@@ -50,7 +73,7 @@ stages:
                     azureSubscription: $(ADO_APP_SERVICE_CONNECTION)
                     scriptType: pscore
                     scriptLocation: inlineScript
-                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc\02-governed-agents\03-maf-multi-agent
+                    workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}\02-governed-agents\03-maf-multi-agent
                     inlineScript: |
                       .\deploy.ps1 `
                         -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
@@ -75,7 +98,12 @@ stages:
     jobs:
       - deployment: RegisterMafAgent365
         pool:
-          vmImage: windows-latest
+          ${{ if eq(parameters.windowsPoolName, 'Microsoft-hosted') }}:
+            vmImage: windows-latest
+          ${{ else }}:
+            name: ${{ parameters.windowsPoolName }}
+            demands:
+              - Agent.OS -equals Windows_NT
         environment: $(ADO_AGENT365_ENVIRONMENT_NAME)
         strategy:
           runOnce:
@@ -88,16 +116,28 @@ stages:
                     packageType: sdk
                     version: 8.x
                 - powershell: |
-                    dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli
+                    $ErrorActionPreference = "Stop"
+                    $toolPath = Join-Path $env:USERPROFILE ".dotnet\tools"
+                    $env:PATH = "$toolPath;$env:PATH"
+                    Write-Host "##vso[task.prependpath]$toolPath"
+                    if (-not (Get-Command a365 -ErrorAction SilentlyContinue)) {
+                      dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli
+                      if ($LASTEXITCODE -ne 0) {
+                        throw "Agent 365 CLI installation failed."
+                      }
+                    }
                     a365 --help
-                  displayName: Install Agent 365 CLI
+                    if ($LASTEXITCODE -ne 0) {
+                      throw "Agent 365 CLI readiness check failed."
+                    }
+                  displayName: Ensure Agent 365 CLI is available
                 - task: AzureCLI@2
                   displayName: Register and configure MAF Agent 365 identity
                   inputs:
                     azureSubscription: $(ADO_AGENT365_SERVICE_CONNECTION)
                     scriptType: pscore
                     scriptLocation: inlineScript
-                    workingDirectory: $(Build.SourcesDirectory)\foundry-agents-poc
+                    workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}
                     inlineScript: |
                       .\provision-agent365.ps1 `
                         -Scope Maf `
