@@ -89,25 +89,6 @@ try {
             "$projectEndpoint/agents/$agentName",
             "Create $Agent Agent version with $Method"
         )) {
-        if ($Agent -eq "rag") {
-            $prepareArguments = @($configuration.Script, "prepare-index")
-            if ($SearchIndexMode) {
-                $prepareArguments += @("--index-mode", $SearchIndexMode)
-            }
-            if ($SearchIndexName) {
-                $prepareArguments += @("--index-name", $SearchIndexName)
-            }
-            Push-Location $configuration.Folder
-            try {
-                & python @prepareArguments | Out-Host
-                if ($LASTEXITCODE -ne 0) {
-                    throw "RAG index preparation failed; no agent version was created."
-                }
-            }
-            finally {
-                Pop-Location
-            }
-        }
         if ($Method -eq "AzCli") {
             $tokenOutput = & az account get-access-token `
                 --resource "https://ai.azure.com" `
@@ -124,16 +105,7 @@ try {
                 throw "Azure CLI returned an unexpected token response."
             }
 
-            $headers = @{
-                Authorization = "Bearer $($tokenResponse.accessToken)"
-                "Content-Type" = "application/json"
-            }
-            Invoke-RestMethod `
-                -Method Post `
-                -Uri $requestUrl `
-                -Headers $headers `
-                -Body (Get-Content -LiteralPath $bodyPath -Raw) |
-                ConvertTo-Json -Depth 20
+            $accessToken = $tokenResponse.accessToken
         }
         else {
             $tokenOutput = & azd auth token `
@@ -161,17 +133,64 @@ try {
                 throw "azd did not return an access token."
             }
 
-            $headers = @{
-                Authorization = "Bearer $accessToken"
-                "Content-Type" = "application/json"
-            }
-            Invoke-RestMethod `
-                -Method Post `
-                -Uri $requestUrl `
-                -Headers $headers `
-                -Body (Get-Content -LiteralPath $bodyPath -Raw) |
-                ConvertTo-Json -Depth 20
         }
+
+        if ([string]::IsNullOrWhiteSpace($accessToken)) {
+            throw "Authentication did not return an access token."
+        }
+        $headers = @{
+            Authorization = "Bearer $accessToken"
+            "Content-Type" = "application/json"
+        }
+        $connections = @()
+        $nextLink = "$projectEndpoint/connections?api-version=v1&connectionType=AppInsights"
+        while ($nextLink) {
+            if (-not $nextLink.StartsWith("$projectEndpoint/", [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Connection pagination returned a URL outside the approved project."
+            }
+            $page = Invoke-RestMethod -Method Get -Uri $nextLink -Headers $headers
+            $connections += @($page.value)
+            $nextLink = $page.nextLink
+        }
+        $governanceScript = Join-Path $root "agent_governance.py"
+        @{ value = $connections } | ConvertTo-Json -Depth 20 |
+            & python $governanceScript monitoring --expected-name $env:APPLICATION_INSIGHTS_RESOURCE_NAME |
+            Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Project monitoring validation failed; no agent version was created."
+        }
+
+        if ($Agent -eq "rag") {
+            $prepareArguments = @($configuration.Script, "prepare-index")
+            if ($SearchIndexMode) {
+                $prepareArguments += @("--index-mode", $SearchIndexMode)
+            }
+            if ($SearchIndexName) {
+                $prepareArguments += @("--index-name", $SearchIndexName)
+            }
+            Push-Location $configuration.Folder
+            try {
+                & python @prepareArguments | Out-Host
+                if ($LASTEXITCODE -ne 0) {
+                    throw "RAG index preparation failed; no agent version was created."
+                }
+            }
+            finally {
+                Pop-Location
+            }
+        }
+        $created = Invoke-RestMethod -Method Post -Uri $requestUrl -Headers $headers `
+            -Body (Get-Content -LiteralPath $bodyPath -Raw)
+        $details = Invoke-RestMethod -Method Get `
+            -Uri "$projectEndpoint/agents/${escapedAgentName}?api-version=v1" -Headers $headers
+        $identityJson = $details | ConvertTo-Json -Depth 20 |
+            & python $governanceScript identity
+        if ($LASTEXITCODE -ne 0) {
+            throw "Agent Identity validation failed. The created version was not deleted; inspect it before retrying."
+        }
+        $created | Add-Member -NotePropertyName identity_verification `
+            -NotePropertyValue ($identityJson | ConvertFrom-Json) -Force
+        $created | ConvertTo-Json -Depth 20
     }
 }
 finally {

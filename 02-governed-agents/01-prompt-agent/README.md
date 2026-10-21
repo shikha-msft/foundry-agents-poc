@@ -14,7 +14,8 @@ Start with the [customer runbook](../../CUSTOMER-HANDOVER.md) for a new tenant.
 
 ## Create with code
 
-All Prompt Agent code and configuration are contained in this folder:
+Prompt Agent definition/configuration are in this folder; shared platform
+checks live in [`../agent_governance.py`](../agent_governance.py).
 
 | File | Purpose |
 |---|---|
@@ -39,6 +40,14 @@ python prompt_agent.py create
 
 The script loads `.env` from this folder and creates a new version of the agent
 named by `AGENT_NAME`.
+
+Creation checks that this project has an AppInsights connection targeting
+`APPLICATION_INSIGHTS_RESOURCE_NAME`, then reads the agent's managed blueprint
+and identity UUIDs and adds an `identity_verification` receipt. Missing identity
+fails after creation without deleting the version. These checks do not prove
+directory enabled state or trace delivery. The platform supplies model
+guardrails; the definition deliberately does not override them. See the
+[platform operating model](../../PLATFORM-OPERATING-MODEL.md).
 
 List or invoke the agent:
 
@@ -89,7 +98,8 @@ CLI, `azd`, and pipeline paths create the same agent configuration. Add
 5. Use the agent name configured by `AGENT_NAME`.
 6. Select the approved model configured by `MODEL_DEPLOYMENT_NAME`. Use an
    alternative only after recording the reason.
-7. Configure the platform-approved model parameters and content filters.
+7. Use the platform-approved model parameters and inherited deployment
+   guardrail; do not override safety settings without platform approval.
 8. Add the following initial instructions and adapt only the business-specific
    sections.
 

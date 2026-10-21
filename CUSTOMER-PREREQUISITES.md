@@ -16,6 +16,14 @@ applicable**, owner and evidence for every applicable row before onboarding.
 Do not mark a resource ready merely because a similarly named test resource
 or an old deployment-output file exists.
 
+The [platform operating model](./PLATFORM-OPERATING-MODEL.md) defines the
+customer experience: **POC Project** for portal self-service, approved governed
+projects and pipelines for productionization, Agent Identity for every agent,
+and opt-in Agent 365. Platform onboarding supplies each project's tracing and
+the approved model-deployment guardrail baseline; not all controls inherit
+directly from the Foundry resource. External-host instrumentation/identity is
+separate.
+
 ## 1. Required resources and platform configuration
 
 **Baseline** means required for the two-project layout in this kit.
@@ -89,6 +97,8 @@ resource-provider registrations.
 | `Microsoft.Authorization` | Azure role assignments | Baseline; platform verifies availability/registration behavior |
 | `Microsoft.Search` | Azure AI Search | RAG; platform |
 | `Microsoft.Web` | App Service plan/web app and runtime configuration | MAF; platform |
+| `Microsoft.ContainerService` | Customer-managed AKS cluster | Target multi-agent hosting option only; no deployment manifests/pipeline supplied |
+| `Microsoft.ContainerRegistry` | ACR for customer container images | Conditional on customer image/registry choice |
 | `Microsoft.Network` | VNets/subnets, private endpoints, private DNS and related network resources | When customer topology requires them; network/platform |
 | `Microsoft.ManagedIdentity` | User-assigned managed identities | Only if selected; do not infer a separate user-assigned MI is needed for system-assigned identities |
 | `Microsoft.Storage` | Blob/ADLS ingestion sources or separately selected storage | Conditional, not a standalone prerequisite of the current Prompt/MAF runtime |
@@ -247,11 +257,13 @@ concepts, checks and known unattended setup limitations.
 
 For customer agent creation, keep `provisionInfrastructure=false` and
 `enableAgent365Foundry=false`; platform prerequisites are already satisfied.
-The supplied MAF YAML **still invokes the combined provisioning/deployment
-script even when `provisionAgent365=false`**. It is a test reference, not a
-customer package-only deployment pipeline. The customer must use its existing
-application delivery process; do not grant extra infrastructure privileges
-merely to run the reference pipeline unchanged.
+The MAF YAML now defaults `provisionInfrastructure=false` and uses the
+package-only delivery script. It validates platform-owned MI, custom identity
+IDs and monitoring configuration without creating resources or changing app
+settings. Custom identity is required even when Agent 365 is off. Directory
+state, federation and delivery still need platform evidence. The combined
+helper runs only with explicit author/test infrastructure opt-in. Keep
+`provisionAgent365=false` when identity/registration is already platform-owned.
 
 ## 8. Platform-to-application handover checklist
 

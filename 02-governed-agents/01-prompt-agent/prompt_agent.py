@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,9 @@ from azure.identity import (
 from dotenv import load_dotenv
 
 _ROOT = Path(__file__).resolve().parent
+# The CLI folders share the platform checks without a separately installed package.
+sys.path.insert(0, str(_ROOT.parent))
+from agent_governance import verify_identity, verify_monitoring
 
 
 @dataclass(frozen=True)
@@ -94,11 +98,22 @@ def _definition(settings: Settings) -> PromptAgentDefinition:
 
 
 def create_agent(client: AIProjectClient, settings: Settings) -> dict[str, Any]:
+    verify_monitoring(
+        [
+            connection.as_dict()
+            for connection in client.connections.list(connection_type="AppInsights")
+        ],
+        settings.application_insights_resource_name,
+    )
     result = client.agents.create_version(
         agent_name=settings.agent_name,
         body=build_create_body(settings),
     )
-    return result.as_dict()
+    body = result.as_dict()
+    body["identity_verification"] = verify_identity(
+        client.agents.get(agent_name=settings.agent_name).as_dict()
+    )
+    return body
 
 
 def build_create_body(settings: Settings) -> dict[str, Any]:

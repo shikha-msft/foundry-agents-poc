@@ -36,7 +36,8 @@ private networking, filtering, lifecycle control, or enterprise-scale search.
 
 ## Create with code
 
-All RAG Agent code and configuration are contained in this folder:
+RAG definition/index configuration are in this folder; shared platform checks
+live in [`../agent_governance.py`](../agent_governance.py).
 
 | File | Purpose |
 |---|---|
@@ -63,6 +64,15 @@ python rag_agent.py create --index-mode existing --index-name approved-index-nam
 The script loads `.env` from this folder, validates every required setting, and
 creates a new version of the agent named by `AGENT_NAME`. It fails explicitly
 when the Search connection or index is not configured.
+
+Creation also requires the project's AppInsights connection targeting
+`APPLICATION_INSIGHTS_RESOURCE_NAME` and verifies agent-level blueprint/identity
+UUIDs after creation. The response includes `identity_verification`. Synthetic
+agent creation checks monitoring before seeding an index. An identity failure
+leaves any created version/index for inspection. Connection/identity metadata
+checks do not prove trace delivery, directory enabled state or per-agent Search
+authorization. Model guardrails remain platform-owned and are not overridden.
+See the [platform operating model](../../PLATFORM-OPERATING-MODEL.md).
 
 ### Choose an existing index or create a synthetic index
 

@@ -13,6 +13,9 @@ resource creation, provider registration or RBAC-administration permissions.
 
 For detailed explanations alongside this ordered runbook:
 
+- [Platform operating model](./PLATFORM-OPERATING-MODEL.md): POC Project,
+  governed project access, native inheritance versus platform onboarding,
+  self-service data/index creation and current hosting gaps.
 - [Agent 365 guide](./agent-365/README.md): integration paths, tenant approval,
   setup, telemetry, ADO gates and recovery.
 - [Agent Identity guide](./agent-identity/README.md): blueprint objects, ID types,
@@ -37,9 +40,9 @@ checks below are **release gates**, not optional acceptance criteria.
 | Observability | Test monitoring helper; MAF Azure Monitor/Agent 365 instrumentation | Pre-existing monitoring/connections, trace ingestion, correlation, redaction, alerts and retention |
 | Governance | Separate deployment identities, approval environments, instructions | Named owners, risk approval, access reviews and release evidence |
 | Responsible AI/content safety | Instructions and test checklists | Approved Foundry content filters/guardrails and measured safety evaluations |
-| Agent identity | Foundry-managed identity lifecycle; MAF Agent 365 setup/federation path | Actual identities, least-privilege grants and sign-in evidence |
+| Agent identity | Foundry-managed lifecycle with SDK/REST metadata checks; MAF custom identity configuration gate | Actual identities for portal and pipeline agents, directory state, least-privilege grants and sign-in evidence; mandatory independently of Agent 365 |
 | RAG | Existing Search connection/index integration | Ingestion, index schema, data ownership and document access boundaries |
-| Multi-agent | App Service MAF coordinator calling remote Prompt/RAG agents | Controlled PoC network boundary; Easy Auth optional for PoC, authentication required for production |
+| Multi-agent | App Service MAF coordinator and package-only pipeline calling remote Prompt/RAG agents | Preconfigured identity/monitoring/host, controlled PoC network boundary; Easy Auth optional for PoC, authentication required for production. AKS is a target option, not an implemented deployment |
 
 The PoC does **not** integrate the separate sibling `agent-harness` package.
 It does not implement explicit application-level Content Safety/Prompt Shields
@@ -313,9 +316,9 @@ the in-process specialist wrappers are not independently registered identities.
 5. Explicitly authorize each pipeline to use only its connections, environment,
    variable group and agent pools. Do not enable unrestricted pipeline access.
 6. Use the main `azure-pipelines.yml` for agent application stages with
-   infrastructure/Agent 365 changes disabled. The supplied MAF YAML is a
-   combined test reference: use the customer's package-only delivery pipeline
-   instead, unless platform owners explicitly adopt and review its mutations.
+   infrastructure/Agent 365 changes disabled. The MAF YAML also defaults to
+   package-only delivery with `provisionInfrastructure=false`; the combined
+   test helper requires explicit infrastructure opt-in.
 
 ### 7.2 Prepare the self-hosted machines
 
@@ -382,10 +385,11 @@ or successful tool installation.
    false. Download the restricted `foundry-agent-responses` artifact; resolve
    agent-level identities before assigning data roles.
 4. Complete Prompt/RAG tests before delivering MAF application code.
-5. Use customer-owned package delivery to the existing web app, then verify
-   authentication, model calls and retrieval. The supplied MAF pipeline still
-   provisions/configures resources when `provisionAgent365=false`; that flag
-   does not make it a customer package-only pipeline.
+5. Use package-only delivery to the existing web app, then verify
+   authentication, model calls and retrieval. In the supplied MAF pipeline keep
+   both `provisionInfrastructure=false` and `provisionAgent365=false`.
+   Platform MI, custom Agent Identity IDs and monitoring settings must already
+   exist, even when Agent 365 is not selected.
 6. Verify Agent 365 prerequisites supplied by the identity/platform team.
    Section 8 documents admin responsibilities and test-helper behavior, not
    mandatory developer setup. Never rerun registration solely to obtain IDs.

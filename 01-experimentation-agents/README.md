@@ -4,10 +4,17 @@ This guide explains how a developer creates and tests a prompt agent in the
 Microsoft Foundry portal using the project configured by
 `EXPERIMENTATION_PROJECT_DISPLAY_NAME`.
 
-This project is for experimentation with synthetic or non-sensitive data. It
-uses the Foundry project's shared managed identity for approved runtime access.
-Use the governed-agent pattern when an agent needs its own identity, production
-data access, independent lifecycle, or a different authorization boundary.
+The requested portal display name is **POC Project**. This project is for
+experimentation with synthetic or non-sensitive data. Every new agent must
+have a Foundry-managed Agent Identity, just like pipeline-created agents.
+Actual tools may still authenticate through a project or tool managed identity;
+do not infer per-agent data isolation from the agent identity object.
+
+The platform supplies approved model guardrails, project tracing and data
+tools before users arrive. See the
+[platform operating model](../PLATFORM-OPERATING-MODEL.md) for native inheritance
+versus platform automation. Use governed projects/pipelines for production
+delivery, publication and controlled lifecycle, not merely to obtain an identity.
 
 ## Environment
 
@@ -53,7 +60,7 @@ developers where possible.
 |---|---|---|---|
 | Developer group | **Foundry User** | `EXPERIMENTATION_PROJECT_NAME` project | Create, edit, test, and delete prompt agents |
 | Developer group | **Reader** | Parent Foundry account | Find the project and navigate its parent resource |
-| Developer group | **Azure Monitor Reader** | Project Application Insights | View agent traces and metrics |
+| Developer group | **Monitoring Reader** | Project Application Insights | View approved resource metrics; log-query access is separate |
 | Developer group | **Log Analytics Reader** | Project Log Analytics workspace | Run approved log queries |
 | Developer group | **Reader** | Approved downstream resource, only when needed | Discover a resource in a portal connection picker; this does not grant data access |
 
@@ -105,8 +112,8 @@ Important:
   not only the standard Azure IAM role picker.
 - PostgreSQL requires both Entra authentication and SQL grants inside the
   database.
-- Every agent in this project shares the project identity's permissions. Move
-  to the governed-agent pattern when agents require different access.
+- Tool calls using the project identity share its permissions. Neither portal
+  creation nor governed deployment proves per-agent downstream isolation.
 
 ### 1.4 Connection-management RBAC
 
@@ -149,7 +156,9 @@ Foundry account.
    `exp-knowledge-assistant-<team>`.
 5. Add an owner/team tag or description if the portal supports it.
 
-Do not create a hosted agent or governed Agent ID agent for this pattern.
+Choose an ordinary new-model Prompt agent, not a Hosted Agent. Verify its
+managed blueprint and Agent Identity; missing/legacy identity is a blocker
+under the all-agents identity policy.
 
 ### Step 3 - Select an approved model
 
@@ -195,6 +204,14 @@ Do not perform write, delete, role-assignment, or administrative actions.
 4. Configure the tool-specific settings described in section 4.
 5. Save the agent.
 
+Approved users may also create indexes in their assigned Search sandbox:
+**Search Service Contributor** is needed for schema creation, and **Search
+Index Data Contributor** for ingestion. Embeddings require separate inference
+permissions. These are human/setup permissions, not automatic agent runtime
+rights; do not grant them over a shared production service just for convenience.
+Cosmos/PostgreSQL/direct-Blob access requires the approved tool services below,
+not merely a connection in the portal.
+
 ### Step 6 - Test in the playground
 
 Test at least:
@@ -216,6 +233,8 @@ completed rather than inventing a successful result.
 1. Save the agent configuration.
 2. Record the agent name, version, model deployment, owner, connected tools,
    and test evidence.
+   Also record and verify its managed blueprint and Agent Identity using the
+   [identity verification procedure](../agent-identity/README.md#5-foundry-managed-identities-new-versus-legacy).
 3. Do not publish the agent from this experimentation workflow.
 4. Re-run the tests whenever instructions, models, connections, indexes, or
    data permissions change.
@@ -243,7 +262,8 @@ Azure AI Search is the preferred native knowledge-retrieval integration.
 
 1. Create an approved Search service and index.
 2. Include searchable and retrievable content fields.
-3. Include retrievable source/title fields for citations.
+3. Include retrievable source/title fields and a searchable/retrievable URL
+   for the tested native tool's source projection.
 4. Configure vector and semantic search when required.
 5. Use a separate ingestion pipeline to populate and update the index.
 6. Assign **Search Index Data Reader** to the project managed identity for a

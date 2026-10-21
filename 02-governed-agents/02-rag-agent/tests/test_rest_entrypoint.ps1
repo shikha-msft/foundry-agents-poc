@@ -17,19 +17,29 @@ foreach ($folder in @("01-prompt-agent", "02-rag-agent")) {
 $state = @{
     calls = [System.Collections.Generic.List[string]]::new()
     preparationFails = $false
+    monitoringFails = $false
+    identityFails = $false
 }
 
 function python {
+    $input | Out-Null
     $state.calls.Add("python $($args -join ' ')")
     if ($args[1] -eq "render") {
         $position = [array]::IndexOf($args, "--output")
         [System.IO.File]::WriteAllText($args[$position + 1], '{"definition":{}}')
     }
-    if ($args[1] -eq "prepare-index" -and $state.preparationFails) {
+    if (
+        ($args[1] -eq "prepare-index" -and $state.preparationFails) -or
+        ($args[1] -eq "monitoring" -and $state.monitoringFails) -or
+        ($args[1] -eq "identity" -and $state.identityFails)
+    ) {
         $global:LASTEXITCODE = 1
     }
     else {
         $global:LASTEXITCODE = 0
+        if ($args[1] -eq "identity") {
+            '{"blueprint":{},"instance_identity":{}}'
+        }
     }
 }
 
@@ -47,8 +57,11 @@ function azd {
 
 function Invoke-RestMethod {
     param($Method, $Uri, $Headers, $Body)
-    $state.calls.Add("rest")
-    @{ version = "offline" }
+    $state.calls.Add("rest:$Method")
+    if ($Uri -match "/connections") {
+        return @{ value = @() }
+    }
+    [pscustomobject]@{ version = "offline" }
 }
 
 function Assert-Condition {
@@ -66,15 +79,15 @@ try {
     foreach ($mode in @("existing", "create")) {
         $state.calls.Clear()
         & $helper -Agent rag -Method AzCli -SearchIndexMode $mode -SearchIndexName selected-index
-        Assert-Condition ($state.calls.Count -eq 4) "Expected render, prepare, authentication, REST."
-        Assert-Condition ($state.calls[1] -match "prepare-index --index-mode $mode --index-name selected-index") "Index mode/name not forwarded."
-        Assert-Condition ($state.calls[2] -eq "az" -and $state.calls[3] -eq "rest") "Preparation must precede REST creation."
+        Assert-Condition ($state.calls.Count -eq 8) "Expected render, authentication, monitoring, preparation, creation and identity verification."
+        Assert-Condition ($state.calls[4] -match "prepare-index --index-mode $mode --index-name selected-index") "Index mode/name not forwarded."
+        Assert-Condition ($state.calls[1] -eq "az" -and $state.calls[5] -eq "rest:Post") "Preparation must precede REST creation."
     }
 
     $state.calls.Clear()
     & $helper -Agent rag -Method Azd -SearchIndexMode existing
-    Assert-Condition ($state.calls[1] -match "prepare-index --index-mode existing") "Azd path skipped index preparation."
-    Assert-Condition ($state.calls[2] -eq "azd" -and $state.calls[3] -eq "rest") "Azd authentication path changed."
+    Assert-Condition ($state.calls[4] -match "prepare-index --index-mode existing") "Azd path skipped index preparation."
+    Assert-Condition ($state.calls[1] -eq "azd" -and $state.calls[5] -eq "rest:Post") "Azd authentication path changed."
 
     $state.calls.Clear()
     $state.preparationFails = $true
@@ -89,12 +102,40 @@ try {
         $failed = $true
     }
     Assert-Condition $failed "Preparation failure was not surfaced."
-    Assert-Condition ($state.calls.Count -eq 2) "Preparation failure must not authenticate or create an agent."
+    Assert-Condition ($state.calls.Count -eq 5) "Preparation failure must not create an agent."
     $state.preparationFails = $false
 
     $state.calls.Clear()
     & $helper -Agent prompt -Method AzCli
-    Assert-Condition ($state.calls.Count -eq 3) "Prompt creation must not prepare a Search index."
+    Assert-Condition ($state.calls.Count -eq 7) "Prompt creation must not prepare a Search index."
+
+    $state.calls.Clear()
+    $state.monitoringFails = $true
+    $failed = $false
+    try {
+        & $helper -Agent rag -Method AzCli -SearchIndexMode create
+    }
+    catch {
+        if ($_.Exception.Message -notmatch "Project monitoring validation failed") { throw }
+        $failed = $true
+    }
+    Assert-Condition $failed "Missing monitoring must fail."
+    Assert-Condition ($state.calls.Count -eq 4) "Missing monitoring must not prepare an index or create an agent."
+    $state.monitoringFails = $false
+
+    $state.calls.Clear()
+    $state.identityFails = $true
+    $failed = $false
+    try {
+        & $helper -Agent prompt -Method AzCli
+    }
+    catch {
+        if ($_.Exception.Message -notmatch "Agent Identity validation failed") { throw }
+        $failed = $true
+    }
+    Assert-Condition $failed "Missing identity must fail after creation."
+    Assert-Condition ($state.calls -contains "rest:Post") "Identity check should run after creation."
+    $state.identityFails = $false
 
     $state.calls.Clear()
     $failed = $false
@@ -109,7 +150,7 @@ try {
     }
     Assert-Condition $failed "Prompt must reject RAG-only options."
     Assert-Condition ($state.calls.Count -eq 0) "Invalid Prompt options must not execute commands."
-    Write-Output "7 REST entrypoint scenarios passed."
+    Write-Output "9 REST entrypoint scenarios passed."
 }
 finally {
     Remove-Item -LiteralPath $temporaryRoot -Recurse -Force

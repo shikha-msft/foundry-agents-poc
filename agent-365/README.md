@@ -228,9 +228,11 @@ does not prove delivery to the other.
 ## 9. ADO and self-hosted execution
 
 For normal customer onboarding keep platform mutation flags disabled and
-consume existing configuration. The supplied MAF YAML remains a combined
-provisioning/deployment test reference; customers need their own package-only
-delivery process.
+consume existing configuration. The supplied MAF YAML defaults to package-only
+delivery with `provisionInfrastructure=false`; the combined author/test helper
+requires explicit infrastructure opt-in. Custom Agent Identity remains required
+even when Agent 365 is off; the registration stage must not be rerun merely
+to populate missing settings.
 
 The [main pipeline](../azure-pipelines.yml) uses `enableAgent365Foundry` for
 account collection. The [MAF pipeline](../02-governed-agents/04-maf-multi-agent/azure-pipelines.yml)

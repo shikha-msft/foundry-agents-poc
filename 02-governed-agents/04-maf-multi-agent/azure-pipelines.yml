@@ -2,8 +2,12 @@ trigger: none
 pr: none
 
 parameters:
+  - name: provisionInfrastructure
+    displayName: Author test environment only - provision or modify platform resources
+    type: boolean
+    default: false
   - name: enableEasyAuth
-    displayName: Enable optional Easy Auth (requires ENTRA_CLIENT_ID)
+    displayName: Test provisioning only - enable Easy Auth (requires ENTRA_CLIENT_ID)
     type: boolean
     default: false
   - name: linuxPoolName
@@ -74,8 +78,28 @@ stages:
                 - pwsh: .\tests\test_deployment.ps1
                   displayName: Test optional Easy Auth deployment modes
                   workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}\02-governed-agents\04-maf-multi-agent
+                - pwsh: .\tests\test_package_deployment.ps1
+                  displayName: Test package-only platform baseline checks
+                  workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}\02-governed-agents\04-maf-multi-agent
                 - task: AzureCLI@2
-                  displayName: Provision and deploy MAF App Service
+                  displayName: Deploy MAF package to existing platform-managed App Service
+                  condition: and(succeeded(), eq('${{ parameters.provisionInfrastructure }}', 'false'))
+                  inputs:
+                    azureSubscription: $(ADO_APP_SERVICE_CONNECTION)
+                    scriptType: pscore
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)\${{ parameters.pocDirectory }}\02-governed-agents\04-maf-multi-agent
+                    inlineScript: |
+                      if ([bool]::Parse("${{ parameters.enableEasyAuth }}")) {
+                        throw "Customer package delivery does not change Easy Auth. Ask the platform team to configure it."
+                      }
+                      .\deploy-package.ps1 `
+                        -SubscriptionId "$(AZURE_SUBSCRIPTION_ID)" `
+                        -ResourceGroupName "$(AZURE_RESOURCE_GROUP)" `
+                        -WebAppName "$(WEB_APP_NAME)"
+                - task: AzureCLI@2
+                  displayName: Author test environment only - provision and deploy MAF App Service
+                  condition: and(succeeded(), eq('${{ parameters.provisionInfrastructure }}', 'true'))
                   inputs:
                     azureSubscription: $(ADO_APP_SERVICE_CONNECTION)
                     scriptType: pscore

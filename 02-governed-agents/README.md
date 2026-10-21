@@ -11,7 +11,10 @@ agent definitions. Provisioning PowerShell scripts are author/test helpers,
 not the customer's infrastructure delivery process.
 
 This folder defines the governed-agent pattern for the project configured by
-`GOVERNED_PROJECT_DISPLAY_NAME`.
+`GOVERNED_PROJECT_DISPLAY_NAME`. Teams request an approved existing project or
+a new platform-onboarded project before deployment. The
+[platform operating model](../PLATFORM-OPERATING-MODEL.md) supplies safety,
+project tracing and identity prerequisites; developers consume that baseline.
 
 The governed implementation categories are:
 
@@ -43,7 +46,8 @@ Agent ID/Agent 365 integration gap rather than claiming automatic coverage.
 
 ## Runnable implementation
 
-Each agent is a self-contained application under its respective folder:
+Each agent has an application folder; Prompt/RAG also consume the shared
+[`agent_governance.py`](./agent_governance.py) checks from this parent folder:
 
 | Agent | Code and configuration |
 |---|---|
@@ -148,11 +152,13 @@ distinct identity in the legacy Agent Application publishing flow. Creating a
 new version of an existing legacy agent does not prove identity migration.
 Inspect the actual agent object and API/tenant support before claiming isolation.
 
-The scripts serialize the version-creation response. It may not include every
-agent-level identity field. Use `list` and, when necessary, the agent-details
-API to resolve `blueprint` and `instance_identity`, then verify their Entra
-objects. Record blueprint/client/principal IDs, agent identity and returned
-agent identifier in the approved governance register, not in the repository.
+The SDK/REST creation paths require the approved project AppInsights connection
+and then read agent-level `blueprint` and `instance_identity`. They fail when
+identity UUIDs are missing/invalid and include an `identity_verification`
+receipt on success. A failure after creation leaves the version for inspection;
+it is not deleted. These checks validate configuration metadata, not directory
+enabled state, effective guardrails or telemetry delivery. Platform owners
+verify those separately. `render`/`-WhatIf` remain offline.
 See the [identity verification procedure](../CUSTOMER-HANDOVER.md#53-resolve-the-blueprintidentity-model-before-granting-roles).
 
 ```text
@@ -165,10 +171,12 @@ Prompt managed blueprint                 RAG managed blueprint
         v                                       v
 Prompt Agent Identity                    RAG Agent Identity
         |                                       |
-Prompt-only permissions                  Search/data permissions
+Approved agent permissions               Approved agent permissions
 ```
 
 This diagram represents the intended new-model, Agent ID-aware tool path.
+The live-tested native Search tool used project-MI grants, not proven
+per-agent identity authorization.
 Verify the actual connection authentication and runtime principal before
 assigning downstream roles; tools using a project/host identity or key are
 not proof of agent-level authorization.

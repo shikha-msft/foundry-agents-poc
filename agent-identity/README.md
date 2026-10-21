@@ -23,6 +23,14 @@ helpers described here are for the author's test environment. Foundry-managed
 blueprints/identities are an exception to pre-creation: Foundry manages them
 when application agents are created; do not pre-create duplicates.
 
+The [platform operating model](../PLATFORM-OPERATING-MODEL.md) requires an
+Agent Identity for portal/no-code and pipeline-created agents alike, independent
+of Agent 365 opt-in. The SDK/REST Prompt/RAG paths now validate Foundry identity
+metadata after creation. MAF package delivery requires preconfigured custom
+identity IDs even if telemetry export is off. Neither check proves directory
+state or that each tool authenticates as that identity. The audio/AKS gaps
+remain explicit release conditions in that operating model.
+
 ## 2. The identity objects
 
 ```text

@@ -146,9 +146,23 @@ app. Platform teams own the infrastructure, identities, role assignments, Easy
 Auth and runtime configuration. Application developers do not need resource-
 group Contributor or role-assignment authority for routine code delivery.
 
-**The bundled MAF pipeline is not package-only:** it calls the combined helper
-below, even when `provisionAgent365=false`. Do not use it unchanged for customer
-code delivery or grant infrastructure privileges just to make it run.
+The bundled MAF pipeline defaults to **package-only** delivery with
+`provisionInfrastructure=false` and `provisionAgent365=false`.
+[`deploy-package.ps1`](./deploy-package.ps1) validates platform configuration
+and deploys only the application ZIP. It does not create resources, assign
+roles, configure Easy Auth, change app settings, or register agents.
+
+The host must already have its system-assigned MI, custom blueprint/agent
+client IDs and Application Insights configuration. Agent Identity is required
+even when Agent 365 is off; when on, the script also validates the S2S exporter
+configuration. These are metadata/configuration checks, not proof of directory
+state, token exchange, guardrail enforcement or telemetry delivery.
+Startup/build settings and authentication/network restrictions remain platform
+prerequisites. The combined helper below is now explicit author/test opt-in.
+
+AKS is a target hosting alternative, not a deployed option in this kit.
+See the [platform operating model](../../PLATFORM-OPERATING-MODEL.md#6-hosting-and-identity-coverage)
+for its additional workload identity/exporter and deployment requirements.
 
 ## Test environment only: deploy to Azure App Service
 
@@ -246,10 +260,12 @@ each receive a separate Agent 365 registration.
 
 ## Deploy through Azure DevOps
 
-The bundled `04-maf-multi-agent/azure-pipelines.yml` is an **author/test combined
-provisioning/deployment reference**. Customers use their existing package-only
-application pipeline. The permissions below apply to this helper's infrastructure
-mutations, not a blanket customer application permission request.
+The bundled pipeline uses package-only delivery by default. Select
+`provisionInfrastructure=true` only in the author's approved test environment
+to use the combined helper. Package deployment needs scoped web-app delivery
+and configuration-read rights; it does not need resource-group Contributor or
+role-assignment authority. The infrastructure permissions below apply only to
+the explicit test provisioning mode.
 
 Pipeline configuration is read from the
 `foundry-agents-poc-environment` Azure DevOps variable group:
@@ -262,11 +278,12 @@ Pipeline configuration is read from the
 | `ADO_AGENT365_SERVICE_CONNECTION` | Connection used only by the approved Agent 365 stage |
 | `ADO_AGENT365_ENVIRONMENT_NAME` | Approval-protected Agent 365 environment |
 
-Queue-time parameter `enableEasyAuth` defaults to `false`. Set it to `true`
-only to opt into Easy Auth; then the pipeline requires `ENTRA_CLIENT_ID` in the
-variable group. Off mode does not require that variable and explicitly disables
-platform authentication and the application's auth check. This feature is
-independent of `provisionAgent365`.
+Queue-time parameter `enableEasyAuth` defaults to `false` and applies only
+when `provisionInfrastructure=true`. In that test mode it controls both
+platform authentication and the application's auth check and requires
+`ENTRA_CLIENT_ID` when enabled. Package-only delivery does not change existing
+authentication, even with the default false parameter. The platform must
+preconfigure the approved PoC or production boundary.
 
 The service connection identity requires:
 

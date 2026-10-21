@@ -259,6 +259,14 @@ def test_synthetic_documents_do_not_share_mutable_state():
 @pytest.fixture
 def cli(monkeypatch):
     client_factory = Mock()
+    client_factory.return_value.connections.list.return_value = [
+        SimpleNamespace(
+            as_dict=lambda: {
+                "type": "AppInsights",
+                "target": "/subscriptions/mock/providers/Microsoft.Insights/components/mock-insights",
+            }
+        )
+    ]
     credential_factory = Mock()
     prepare_mock = Mock(return_value={"status": "supplied"})
     create = Mock(return_value={"version": "test"})
@@ -308,6 +316,19 @@ def test_cli_preparation_failure_does_not_create_agent(cli):
     assert error.value.code == 2
     cli.create.assert_not_called()
     cli.client_factory.return_value.close.assert_called_once()
+
+
+def test_create_without_monitoring_does_not_seed_index(cli, monkeypatch, options):
+    monkeypatch.setenv("AZURE_AI_EMBEDDING_ENDPOINT", options.embedding_endpoint)
+    monkeypatch.setenv(
+        "AZURE_AI_EMBEDDING_DEPLOYMENT_NAME", options.embedding_deployment
+    )
+    cli.client_factory.return_value.connections.list.return_value = []
+    with pytest.raises(SystemExit) as error:
+        rag_agent.main(["create", "--index-mode", "create"])
+    assert error.value.code == 2
+    cli.prepare.assert_not_called()
+    cli.create.assert_not_called()
 
 
 def test_prepare_only_does_not_create_an_agent(cli, capsys):
@@ -371,4 +392,4 @@ def test_rest_entrypoint_modes_and_whatif():
         timeout=90,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "7 REST entrypoint scenarios passed." in result.stdout
+    assert "9 REST entrypoint scenarios passed." in result.stdout

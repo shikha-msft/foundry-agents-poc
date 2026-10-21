@@ -10,6 +10,12 @@ provided through customer IaC or the platform team. The two-project layout is:
 
 ## Implementation guides
 
+- **[Platform operating model: POC to governed agents](./PLATFORM-OPERATING-MODEL.md)** -
+  centrally managed controls, inheritance boundaries, self-service data/indexes,
+  Agent Identity for every agent and opt-in Agent 365.
+- **[All-agent prerequisites: common and per-agent](./AGENT-PREREQUISITES-README.md)** -
+  grouped no-code and governed agent requirements, providers, RBAC, Entra ID,
+  Microsoft Graph and Agent 365.
 - **[Customer prerequisite tables](./CUSTOMER-PREREQUISITES.md)** - required
   resources, providers, RBAC, networking, Entra Agent ID and Agent 365 readiness.
 - **[Start here: customer setup and handover runbook](./CUSTOMER-HANDOVER.md)** -
@@ -45,6 +51,13 @@ Copy the customer-safe template and populate the local configuration:
 ```powershell
 Copy-Item .env.sample .env
 ```
+
+Use **POC Project** as the experimentation display name. Governed teams request
+access to an existing approved project or a new platform-onboarded one; update
+their endpoint/variable group rather than assuming one fixed governed project.
+The platform supplies project monitoring and approved model-deployment
+guardrails before team access. This is not universal resource-level inheritance:
+see the [control-scope matrix](./PLATFORM-OPERATING-MODEL.md#2-what-actually-flows-down).
 
 The root `.env` contains the subscription, tenant, resource group, Foundry
 account, project, monitoring, Search, and App Service names for the selected

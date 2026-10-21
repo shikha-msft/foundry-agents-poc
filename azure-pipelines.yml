@@ -72,10 +72,10 @@ stages:
                 -r 02-rag-agent/requirements-dev.txt \
                 "ruff>=0.11,<1"
               python -m ruff check \
-                --config 'lint.isort.known-first-party = ["rag_agent", "search_index"]' \
-                01-prompt-agent/prompt_agent.py 02-rag-agent
-              python -m ruff format --check 01-prompt-agent/prompt_agent.py 02-rag-agent
-              python -m compileall -q 01-prompt-agent/prompt_agent.py 02-rag-agent
+                --config 'lint.isort.known-first-party = ["agent_governance", "prompt_agent", "rag_agent", "search_index"]' \
+                agent_governance.py 01-prompt-agent/prompt_agent.py 02-rag-agent
+              python -m ruff format --check agent_governance.py 01-prompt-agent/prompt_agent.py 02-rag-agent
+              python -m compileall -q agent_governance.py 01-prompt-agent/prompt_agent.py 02-rag-agent
               python -m pytest 02-rag-agent/tests
             workingDirectory: $(Build.SourcesDirectory)/${{ parameters.pocDirectory }}/02-governed-agents
             displayName: Install and validate Python
