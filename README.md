@@ -28,9 +28,7 @@ provided through customer IaC or the platform team. The two-project layout is:
 - [Agent 365: concepts, onboarding and operations](./agent-365/README.md)
 - [Entra Agent Identity: blueprints, permissions and token flow](./agent-identity/README.md)
 
-The PowerShell provisioning scripts are **author/test-environment helpers**,
-not customer infrastructure deployment instructions. Customers should already
-have the following baseline through their platform process:
+The platform team supplies the following baseline before agent onboarding:
 
 - A system-assigned managed identity.
 - A dedicated Log Analytics workspace.
@@ -95,11 +93,12 @@ Confirm the customer's network configuration before deployment. The script
 does not change the shared account's public/private network settings or
 provision private connectivity.
 
-## Test environment only: infrastructure helper
+## Optional infrastructure provisioning
 
-The commands below are retained for the author's own test environment.
-**Customer onboarding starts with the prerequisite tables, not these commands.**
-The helper creates/updates projects, monitoring, connections, providers and RBAC.
+If infrastructure is already managed through your platform's IaC process,
+continue with the prerequisite checks and agent onboarding. Where platform
+administrators choose to use the provisioning script, it creates/updates
+projects, monitoring, connections, providers and RBAC.
 
 From `foundry-agents-poc`:
 
@@ -129,9 +128,10 @@ assignments that already exist. It writes non-secret resource identifiers to
 
 ## Microsoft Agent 365 provisioning
 
-For customers, licensing, consent, registration, federation and platform
-configuration are pre-established by the platform/identity team. The following
-commands document **test helpers**, not mandatory customer setup steps.
+Licensing, consent, registration, federation and platform configuration are
+managed by the platform/identity team. The commands below are optional
+administrative setup steps; skip them when the required configuration already
+exists.
 See the [Agent 365 prerequisite table](./CUSTOMER-PREREQUISITES.md#6-agent-365-prerequisites).
 
 Agent 365 is opt-in because it requires tenant licensing, tenant consent, and
@@ -200,7 +200,7 @@ excluded from Git.
 ## Azure DevOps pipeline
 
 [`azure-pipelines.yml`](./azure-pipelines.yml) includes application stages and
-optional author/test-environment provisioning stages:
+optional platform-administration provisioning stages:
 
 1. Validate and compile the standalone Prompt/RAG agents and test the audio API.
 2. Optionally run the idempotent `deploy.ps1` infrastructure provisioning.
@@ -232,7 +232,7 @@ produces a new immutable version. Run it manually and select:
    `ADO_AGENT_SERVICE_CONNECTION`. Do not create a client secret.
 3. Grant its identity **Foundry User** on the project identified by
    `GOVERNED_PROJECT_NAME` for agent creation.
-4. **Author/test environment only:** if the pipeline will provision infrastructure, create a separate
+4. If platform administrators will use the pipeline to provision infrastructure, create a separate
    workload-federated connection and set its name in
    `ADO_INFRASTRUCTURE_SERVICE_CONNECTION`. Grant its identity
    **Contributor** on
